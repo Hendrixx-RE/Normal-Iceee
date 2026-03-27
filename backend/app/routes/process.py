@@ -1,199 +1,219 @@
 from fastapi import APIRouter, UploadFile, File, HTTPException
-from app.models.schemas import ProcessResponse, HealthResponse
-from app.services.ocr import extract_pdf_text, render_pdf_pages
+from app.models.schemas import ProcessResponse, HealthResponse, LabReportData, PrescriptionData
+from app.services.ocr import extract_pdf_text
 from app.services.llm import (
-    extract_structured_data, 
+    extract_structured_data,
     extract_structured_data_batch,
     merge_lab_report_data,
-    merge_prescription_data
+    merge_prescription_data,
 )
-from app.services.fhir_mapper import generate_fhir_bundle, generate_fhir_bundles_batch, merge_fhir_bundles
+from app.services.fhir_mapper import generate_fhir_bundle
 from app.services.document_splitter import split_document
 from app.services.ocr_strategies.quality_checker import TextQualityChecker
 from app.config import settings
-from app.models.schemas import LabReportData, PrescriptionData
 import logging
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# Threshold for using batch processing (in characters)
-BATCH_PROCESSING_THRESHOLD = 20000  # ~5000 tokens
-MULTIMODAL_OCR_QUALITY_THRESHOLD = 75.0
+# ---------------------------------------------------------------------------
+# Thresholds
+# ---------------------------------------------------------------------------
+BATCH_PROCESSING_THRESHOLD = 20000  # chars — above this we split + batch
+OCR_QUALITY_GOOD = 75.0             # score at which OCR text is trusted alone
+OCR_QUALITY_USABLE = 40.0           # below this we ignore OCR text entirely
+
 
 @router.get("/health", response_model=HealthResponse)
 async def health_check():
-    """Health check endpoint"""
-    gemini_configured = bool(settings.GEMINI_API_KEY)
-    
+    """Health check endpoint."""
     return HealthResponse(
         status="healthy",
         message="Healthcare FHIR API is running",
-        gemini_configured=gemini_configured
+        gemini_configured=bool(settings.GEMINI_API_KEY),
     )
+
 
 @router.post("/process-pdf", response_model=ProcessResponse)
 async def process_pdf(
-    file: UploadFile = File(..., description="PDF file (lab report or prescription)")
+    file: UploadFile = File(..., description="PDF file (lab report or prescription)"),
 ):
     """
-    Process a clinical PDF document and generate FHIR bundle.
-    
-    Supports batch processing for large multi-report documents.
-    
-    Steps:
-    1. Validate file
-    2. Extract text using OCR
-    3. Detect if document is large (needs batch processing)
-    4. Extract structured data using Gemini LLM (with batching if needed)
-    5. Generate FHIR R4 Bundle(s) and merge
+    Process a clinical PDF and generate a FHIR R4 bundle.
+
+    Pipeline:
+        1. Validate upload.
+        2. Render PDF pages → PaddleOCR text extraction.
+        3. Quality-gate the OCR output:
+           a. Good quality  → send text only to Gemini.
+           b. Mediocre      → send text + page images (multimodal).
+           c. Very poor/empty → send page images only (multimodal).
+        4. For large documents, split into sections and batch process.
+        5. Generate FHIR bundle from structured data.
     """
     try:
-        # Validate file type
-        if not file.filename or not file.filename.lower().endswith('.pdf'):
+        # ------------------------------------------------------------------
+        # 1. Validate upload
+        # ------------------------------------------------------------------
+        if not file.filename or not file.filename.lower().endswith(".pdf"):
             raise HTTPException(status_code=400, detail="Only PDF files are supported")
-        
-        # Read file
+
         pdf_bytes = await file.read()
-        
-        # Check file size
+
+        if len(pdf_bytes) == 0:
+            raise HTTPException(status_code=400, detail="Uploaded file is empty")
+
         if len(pdf_bytes) > settings.MAX_FILE_SIZE:
             raise HTTPException(
                 status_code=400,
-                detail=f"File size exceeds maximum allowed size of {settings.MAX_FILE_SIZE / (1024*1024)}MB"
+                detail=f"File size exceeds {settings.MAX_FILE_SIZE // (1024 * 1024)}MB limit",
             )
-        
-        if len(pdf_bytes) == 0:
-            raise HTTPException(status_code=400, detail="Uploaded file is empty")
-        
-        logger.info(f"Processing PDF: {file.filename}, size: {len(pdf_bytes)} bytes")
-        
-        # Step 1: Extract text from PDF
+
+        logger.info(f"Processing PDF: {file.filename} ({len(pdf_bytes)} bytes)")
+
+        # ------------------------------------------------------------------
+        # 2. OCR — render pages + PaddleOCR
+        # ------------------------------------------------------------------
         try:
-            extracted_text = await extract_pdf_text(pdf_bytes)
-            logger.info(f"Extracted {len(extracted_text)} characters from PDF")
-        except Exception as e:
-            logger.error(f"OCR extraction failed: {e}")
+            extracted_text, page_images = await extract_pdf_text(pdf_bytes)
+        except ValueError as exc:
+            logger.error(f"PDF rendering failed: {exc}")
             return ProcessResponse(
                 success=False,
-                message="Failed to extract text from PDF",
-                error=str(e)
+                message="Failed to render PDF pages for OCR",
+                error=str(exc),
             )
-        
-        # Step 2: Determine if batch processing is needed
-        use_batch_processing = len(extracted_text) > BATCH_PROCESSING_THRESHOLD
-        sections = []  # Initialize sections list
-        
-        if use_batch_processing:
-            logger.info(f"Document is large ({len(extracted_text)} chars), using batch processing")
-            
-            # Split document into sections
+        except Exception as exc:
+            logger.error(f"OCR pipeline error: {exc}", exc_info=True)
+            return ProcessResponse(
+                success=False,
+                message="Unexpected error during OCR extraction",
+                error=str(exc),
+            )
+
+        # ------------------------------------------------------------------
+        # 3. Quality gate — decide multimodal strategy
+        # ------------------------------------------------------------------
+        quality_score = TextQualityChecker.get_quality_score(extracted_text) if extracted_text else 0.0
+        logger.info(f"OCR quality score: {quality_score:.1f}/100 | text length: {len(extracted_text)} chars")
+
+        # Decide what to send to Gemini
+        if quality_score >= OCR_QUALITY_GOOD:
+            # Good OCR → text-only (faster, cheaper)
+            send_images = None
+            logger.info("Strategy: text-only (good OCR quality)")
+        elif quality_score >= OCR_QUALITY_USABLE:
+            # Mediocre OCR → send text + images so Gemini can cross-reference
+            send_images = page_images
+            logger.info("Strategy: text + images (mediocre OCR quality)")
+        else:
+            # Bad/empty OCR → send images only, let Gemini read the document
+            send_images = page_images
+            if not extracted_text:
+                extracted_text = ""
+            logger.info("Strategy: images primary (poor/no OCR text)")
+
+        # ------------------------------------------------------------------
+        # 4. Structured data extraction via Gemini
+        # ------------------------------------------------------------------
+        use_batch = len(extracted_text) > BATCH_PROCESSING_THRESHOLD
+        sections = []
+
+        if use_batch:
+            logger.info(f"Large document ({len(extracted_text)} chars) — batch processing")
             try:
                 sections = split_document(extracted_text, strategy="smart")
-                logger.info(f"Split document into {len(sections)} sections")
-            except Exception as e:
-                logger.error(f"Document splitting failed: {e}")
+                logger.info(f"Split into {len(sections)} sections")
+            except Exception as exc:
+                logger.error(f"Document splitting failed: {exc}")
                 return ProcessResponse(
                     success=False,
-                    message="Failed to split document for batch processing",
+                    message="Failed to split large document for batch processing",
                     extracted_text=extracted_text,
-                    error=str(e)
+                    error=str(exc),
                 )
-            
-            # Extract structured data from each section
+
             try:
-                structured_data_list = await extract_structured_data_batch(sections, document_type="auto")
-                logger.info(f"Extracted {len(structured_data_list)} structured data objects")
-                
-                if not structured_data_list:
-                    raise ValueError("No data extracted from any section")
-                
-                # Merge all structured data into one
-                first_item = structured_data_list[0]
-                if isinstance(first_item, LabReportData):
-                    # Filter to only LabReportData items
-                    lab_reports = [d for d in structured_data_list if isinstance(d, LabReportData)]
-                    merged_data = merge_lab_report_data(lab_reports)
+                results = await extract_structured_data_batch(sections, document_type="auto")
+                if not results:
+                    raise ValueError("No structured data extracted from any section")
+
+                first = results[0]
+                if isinstance(first, LabReportData):
+                    structured_data = merge_lab_report_data(
+                        [r for r in results if isinstance(r, LabReportData)]
+                    )
                     document_type = "lab_report"
                 else:
-                    # Filter to only PrescriptionData items
-                    prescriptions = [d for d in structured_data_list if isinstance(d, PrescriptionData)]
-                    merged_data = merge_prescription_data(prescriptions)
+                    structured_data = merge_prescription_data(
+                        [r for r in results if isinstance(r, PrescriptionData)]
+                    )
                     document_type = "prescription"
-                
-                structured_data = merged_data
-                
-            except Exception as e:
-                logger.error(f"Batch LLM extraction failed: {e}")
+
+            except Exception as exc:
+                logger.error(f"Batch LLM extraction failed: {exc}")
                 return ProcessResponse(
                     success=False,
-                    message="Failed to extract structured data from document sections",
+                    message="Failed to extract structured data (batch)",
                     extracted_text=extracted_text,
-                    error=str(e)
+                    error=str(exc),
                 )
         else:
-            # Standard single-pass processing for smaller documents
-            logger.info(f"Document is small ({len(extracted_text)} chars), using standard processing")
-            
+            # Standard single-pass extraction
             try:
-                quality_score = TextQualityChecker.get_quality_score(extracted_text)
-                page_images = None
-
-                if quality_score < MULTIMODAL_OCR_QUALITY_THRESHOLD:
-                    logger.info(
-                        f"OCR quality is low ({quality_score:.1f}); using multimodal Gemini fallback"
-                    )
-                    page_images = render_pdf_pages(pdf_bytes)
-
                 structured_data = await extract_structured_data(
                     extracted_text,
                     document_type="auto",
-                    page_images=page_images
+                    page_images=send_images,
                 )
-                logger.info(f"Extracted structured data: {structured_data.document_type}")
                 document_type = structured_data.document_type
-            except Exception as e:
-                logger.error(f"LLM extraction failed: {e}")
+                logger.info(f"Extracted structured data: {document_type}")
+            except Exception as exc:
+                logger.error(f"LLM extraction failed: {exc}")
                 return ProcessResponse(
                     success=False,
-                    message="Failed to extract structured data from text",
+                    message="Failed to extract structured data from document",
                     extracted_text=extracted_text,
-                    error=str(e)
+                    error=str(exc),
                 )
-        
-        # Step 3: Generate FHIR Bundle
+
+        # ------------------------------------------------------------------
+        # 5. Generate FHIR R4 Bundle
+        # ------------------------------------------------------------------
         try:
             fhir_bundle = await generate_fhir_bundle(structured_data)
-            logger.info(f"Generated FHIR bundle with {len(fhir_bundle.get('entry', []))} resources")
-        except Exception as e:
-            logger.error(f"FHIR generation failed: {e}")
+            logger.info(f"FHIR bundle generated with {len(fhir_bundle.get('entry', []))} resources")
+        except Exception as exc:
+            logger.error(f"FHIR generation failed: {exc}")
             return ProcessResponse(
                 success=False,
                 message="Failed to generate FHIR bundle",
                 extracted_text=extracted_text,
-                error=str(e)
+                error=str(exc),
             )
-        
-        # Success response
+
+        # ------------------------------------------------------------------
+        # 6. Success
+        # ------------------------------------------------------------------
         message = f"Successfully processed {document_type}"
-        if use_batch_processing:
-            message += f" (batch processed {len(sections)} sections)"
-        
+        if use_batch:
+            message += f" (batch: {len(sections)} sections)"
+
         return ProcessResponse(
             success=True,
             message=message,
             extracted_text=extracted_text,
             fhir_bundle=fhir_bundle,
-            document_type=document_type
+            document_type=document_type,
         )
-        
+
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error(f"Unexpected error processing PDF: {e}", exc_info=True)
+    except Exception as exc:
+        logger.error(f"Unexpected error: {exc}", exc_info=True)
         return ProcessResponse(
             success=False,
-            message="An unexpected error occurred",
-            error=str(e)
+            message="An unexpected error occurred while processing the PDF",
+            error=str(exc),
         )

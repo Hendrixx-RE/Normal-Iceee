@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(venvScriptspython.exe -c \"from app.services.ocr import extract_pdf_text, render_pdf_pages; print\\(''ocr.py imports OK''\\)\")"
+    ]
+  }
+}

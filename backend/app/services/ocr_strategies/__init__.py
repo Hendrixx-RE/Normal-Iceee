@@ -1,7 +1,7 @@
 """
-OCR Strategy implementations for different document types
+OCR Strategy — PaddleOCR engine and text quality checker.
 """
-from .image_based import TesseractOCR
+from .image_based import PaddleOCREngine
 from .quality_checker import TextQualityChecker
 
-__all__ = ['TesseractOCR', 'TextQualityChecker']
+__all__ = ["PaddleOCREngine", "TextQualityChecker"]

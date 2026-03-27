@@ -1,7 +1,7 @@
 # Healthcare FHIR MVP - Complete Project Summary
 
-**Last Updated:** March 24, 2026  
-**Status:** Production-ready MVP with batch processing support
+**Last Updated:** March 27, 2026
+**Status:** Production-ready MVP with PaddleOCR pipeline and batch processing support
 
 ---
 
@@ -10,13 +10,13 @@
 This is a production-ready AI-powered clinical document processing system that converts PDF lab reports and prescriptions into FHIR R4-compliant bundles. The system uses **Google's Gemini 2.5 Flash** LLM for intelligent data extraction and supports batch processing for large multi-report documents (40+ pages).
 
 **Technology Stack:**
-- **Backend:** FastAPI (Python 3.10+), Google Gemini AI, pdfplumber/PyMuPDF
+- **Backend:** FastAPI (Python 3.10+), Google Gemini AI, PaddleOCR, PyMuPDF (rendering)
 - **Frontend:** React 18 + TypeScript, Vite, Tailwind CSS
 - **Standards:** FHIR R4, RESTful API
 
 **Key Capabilities:**
-- ✅ PDF text extraction with dual-strategy OCR
-- ✅ AI-powered structured data extraction
+- ✅ PDF text extraction via PaddleOCR (image-based pipeline)
+- ✅ AI-powered structured data extraction with Gemini multimodal fallback
 - ✅ FHIR R4 bundle generation (8 resource types)
 - ✅ Batch processing for large documents (40+ pages)
 - ✅ Real-time processing with visual feedback
@@ -52,7 +52,7 @@ This is a production-ready AI-powered clinical document processing system that c
 │  └─ process.py (health, process-pdf endpoints)             │
 │                                                             │
 │  Services (app/services/):                                  │
-│  ├─ ocr.py (pdfplumber + PyMuPDF extraction)              │
+│  ├─ ocr.py (PaddleOCR pipeline: render → OCR → text)      │
 │  ├─ llm.py (Gemini extraction + batch processing)          │
 │  ├─ fhir_mapper.py (FHIR R4 resource generation)          │
 │  └─ document_splitter.py (smart document splitting)        │
@@ -81,10 +81,10 @@ healthcare-fhir-mvp/
 │   │   ├── routes/
 │   │   │   └── process.py             # API endpoints (184 lines)
 │   │   ├── services/
-│   │   │   ├── ocr.py                 # PDF extraction (87 lines)
-│   │   │   ├── ocr_strategies/        # Advanced OCR (not in main pipeline)
-│   │   │   │   ├── image_based.py     # Tesseract OCR (210 lines)
-│   │   │   │   └── quality_checker.py # Text quality validation (145 lines)
+│   │   │   ├── ocr.py                 # PaddleOCR pipeline (render + extract)
+│   │   │   ├── ocr_strategies/        # OCR engine & quality validation
+│   │   │   │   ├── image_based.py     # PaddleOCR engine (singleton)
+│   │   │   │   └── quality_checker.py # Text quality scoring (145 lines)
 │   │   │   ├── llm.py                 # Gemini integration (394 lines)
 │   │   │   ├── fhir_mapper.py         # FHIR generation (526 lines)
 │   │   │   └── document_splitter.py   # Batch splitting (179 lines)
@@ -175,30 +175,34 @@ Body: file (PDF)
 
 ### **2. OCR Service** (`backend/app/services/ocr.py`)
 
-**PDFExtractor Class - Dual Strategy:**
+**PaddleOCR Image-Based Pipeline:**
 
-#### **Strategy 1: pdfplumber** (lines 12-27)
-- **Best for:** Text-based PDFs (native digital documents)
-- **Method:** Direct text extraction from PDF structure
-- **Speed:** Very fast (~1-2 seconds)
+The OCR pipeline renders every PDF page to an image and runs PaddleOCR on each. This ensures consistent handling of both text-based and scanned PDFs.
 
-#### **Strategy 2: PyMuPDF** (lines 30-46)
-- **Best for:** Scanned/image-based PDFs
-- **Method:** OCR with image processing
-- **Speed:** Moderate (~3-5 seconds)
+#### **Pipeline Steps:**
+1. **Render pages** — PyMuPDF renders each page at 300 DPI to a PIL Image.
+2. **PaddleOCR** — `PaddleOCREngine.extract_text(image)` runs on each page.
+3. **Quality gate** — `TextQualityChecker` scores the combined output (0-100).
 
-**Fallback Logic** (lines 54-60):
-```python
-1. Try pdfplumber first
-2. If result < 50 chars → fallback to PyMuPDF
-3. If still < 10 chars → raise error
+#### **Quality-Based Fallback (in `process.py`):**
+```
+Score >= 75  → text-only to Gemini (fast, cheap)
+Score 40-74  → text + page images to Gemini multimodal
+Score < 40   → page images only to Gemini multimodal (Gemini reads the images)
 ```
 
-**Entry Point:** `extract_pdf_text(pdf_bytes)` async function
+**Key Functions:**
+- `render_pdf_pages(pdf_bytes, dpi=300)` — PDF → list of PIL Images
+- `ocr_images(images)` — PaddleOCR on each image, joined text
+- `extract_pdf_text(pdf_bytes)` — returns `(text, page_images)` tuple
 
-**Additional Strategies (not in main pipeline):**
-- `TesseractOCR` (ocr_strategies/image_based.py): Heavy OCR for very poor quality scans
-- `TextQualityChecker` (ocr_strategies/quality_checker.py): Validates extraction quality
+**Engine:** `PaddleOCREngine` (singleton in `ocr_strategies/image_based.py`)
+- Lazy initialization — app boots fast, model loads on first request
+- Windows cache directory handling for PaddleOCR models
+- Supports both `predict` (>=2.8) and `ocr` (legacy) API
+
+**Quality Checker:** `TextQualityChecker` (in `ocr_strategies/quality_checker.py`)
+- Scores based on text length, alphanumeric ratio, and medical keyword presence
 
 ---
 
@@ -424,13 +428,17 @@ ALLOWED_EXTENSIONS: list        # [".pdf"]
 - `fastapi>=0.115.0` - Web framework
 - `uvicorn[standard]>=0.32.0` - ASGI server
 - `python-multipart>=0.0.6` - File upload support
-- `pdfplumber>=0.10.3` - PDF text extraction
-- `PyMuPDF>=1.24.0` - Alternative PDF extraction
+- `PyMuPDF>=1.24.0` - PDF page rendering (images)
+- `paddleocr>=2.8.1` - PaddleOCR (primary OCR engine)
+- `numpy>=1.26.0` - Array handling for PaddleOCR
+- `Pillow>=10.0.0` - Image processing
 - `google-generativeai>=0.8.0` - Gemini AI SDK
 - `fhir.resources>=7.1.0` - FHIR R4 resource models
 - `python-dotenv>=1.0.0` - Environment variables
 - `pydantic>=2.10.0` - Data validation
 - `aiofiles>=23.2.1` - Async file operations
+
+**Removed (v1.1):** `pdfplumber`, `pytesseract` — replaced by PaddleOCR pipeline
 
 ---
 
@@ -665,12 +673,13 @@ export interface HealthResponse {
          ▼
 ┌─────────────────────────────────────────────┐
 │      2. OCR EXTRACTION (ocr.py)             │
-│  Strategy 1: pdfplumber (text-based)        │
-│     ├─ Fast extraction (~1-2s)              │
-│     └─ If result < 50 chars → Strategy 2    │
-│  Strategy 2: PyMuPDF (scanned)              │
-│     └─ OCR extraction (~3-5s)               │
-│  Output: Raw text string                    │
+│  Step A: Render pages → images (PyMuPDF)    │
+│  Step B: PaddleOCR on each page image       │
+│  Step C: Quality score (0-100)              │
+│     ├─ >= 75: text-only to Gemini           │
+│     ├─ 40-74: text + images (multimodal)    │
+│     └─ < 40:  images only (multimodal)      │
+│  Output: (text, page_images) tuple          │
 └────────┬────────────────────────────────────┘
          │
          ▼
@@ -926,8 +935,9 @@ npm run dev
 | Very Large (40+ pages) | 40+ | 30-60 seconds | Multiple LLM calls |
 
 **Processing Breakdown:**
-- OCR: 1-5 seconds (10-15%)
-- LLM extraction: 4-50 seconds (70-85%)
+- Page rendering: 1-3 seconds (5-10%)
+- PaddleOCR: 2-8 seconds (15-25%)
+- LLM extraction: 4-50 seconds (60-75%)
 - FHIR generation: <1 second (5%)
 
 ---
@@ -1235,8 +1245,8 @@ None reported (MVP just completed)
 |------|-------|---------|---------------|
 | `app/main.py` | 50 | FastAPI app setup | CORS, routes, startup |
 | `app/config.py` | 21 | Configuration | Settings class |
-| `app/routes/process.py` | 184 | API endpoints | `/health`, `/process-pdf` |
-| `app/services/ocr.py` | 87 | PDF extraction | `extract_pdf_text()` |
+| `app/routes/process.py` | 175 | API endpoints | `/health`, `/process-pdf`, quality gate |
+| `app/services/ocr.py` | 130 | PaddleOCR pipeline | `render_pdf_pages()`, `ocr_images()`, `extract_pdf_text()` |
 | `app/services/llm.py` | 394 | Gemini integration | `extract_lab_report()`, `extract_prescription()`, batch processing |
 | `app/services/fhir_mapper.py` | 526 | FHIR generation | `generate_fhir_bundle()`, `merge_fhir_bundles()` |
 | `app/services/document_splitter.py` | 179 | Document splitting | `split_document()`, smart split |
@@ -1264,10 +1274,10 @@ None reported (MVP just completed)
    - Clear separation of concerns
    - Easy to test and maintain
 
-2. **Strategy Pattern (OCR):**
-   - Multiple extraction strategies
-   - Automatic fallback on failure
-   - Extensible for new strategies
+2. **Pipeline Pattern (OCR):**
+   - Single PaddleOCR engine with quality-gated fallback
+   - Render → OCR → quality check → Gemini (text or multimodal)
+   - Clean, linear data flow
 
 3. **Factory Pattern (FHIR):**
    - Resource creation methods
@@ -1323,6 +1333,20 @@ For issues or questions:
 
 ## **📝 Change Log**
 
+### **Version 1.1 - PaddleOCR Pipeline Rewrite (March 27, 2026)**
+
+**OCR Pipeline Overhaul:**
+- Replaced dual-strategy OCR (pdfplumber + PyMuPDF text extraction + Tesseract) with single PaddleOCR image-based pipeline
+- All PDFs now rendered to images first, then PaddleOCR extracts text — consistent for both text-based and scanned PDFs
+- Added quality-gated Gemini fallback: good OCR → text-only, mediocre → text+images, poor → images-only (multimodal)
+- Removed dependencies: `pdfplumber`, `pytesseract`
+- Simplified `ocr.py` from multi-class strategy pattern to clean linear pipeline
+- `extract_pdf_text()` now returns `(text, page_images)` tuple for downstream flexibility
+- Better error handling: per-page OCR errors don't abort entire document
+- Cleaner route handler with explicit quality thresholds
+
+---
+
 ### **Version 1.0 - Initial Release (March 24, 2026)**
 
 ✅ **Core Features Implemented:**
@@ -1354,7 +1378,9 @@ For issues or questions:
 - Max file size: 10MB
 - Max chunk size: 15,000 chars
 - Gemini max tokens: 8192
-- OCR fallback: <50 chars
+- OCR quality good: >= 75 (text-only)
+- OCR quality usable: >= 40 (text + images)
+- OCR quality poor: < 40 (images only → Gemini multimodal)
 
 ### **Command Quick Reference**
 
@@ -1383,4 +1409,4 @@ This summary will be updated after each significant change to the project.
 
 ---
 
-*Generated by OpenCode AI - Last updated: March 24, 2026*
+*Last updated: March 27, 2026*
