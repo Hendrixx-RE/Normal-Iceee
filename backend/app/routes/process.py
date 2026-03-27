@@ -1,6 +1,6 @@
 from fastapi import APIRouter, UploadFile, File, HTTPException
 from app.models.schemas import ProcessResponse, HealthResponse
-from app.services.ocr import extract_pdf_text
+from app.services.ocr import extract_pdf_text, render_pdf_pages
 from app.services.llm import (
     extract_structured_data, 
     extract_structured_data_batch,
@@ -9,6 +9,7 @@ from app.services.llm import (
 )
 from app.services.fhir_mapper import generate_fhir_bundle, generate_fhir_bundles_batch, merge_fhir_bundles
 from app.services.document_splitter import split_document
+from app.services.ocr_strategies.quality_checker import TextQualityChecker
 from app.config import settings
 from app.models.schemas import LabReportData, PrescriptionData
 import logging
@@ -19,6 +20,7 @@ router = APIRouter()
 
 # Threshold for using batch processing (in characters)
 BATCH_PROCESSING_THRESHOLD = 20000  # ~5000 tokens
+MULTIMODAL_OCR_QUALITY_THRESHOLD = 75.0
 
 @router.get("/health", response_model=HealthResponse)
 async def health_check():
@@ -135,7 +137,20 @@ async def process_pdf(
             logger.info(f"Document is small ({len(extracted_text)} chars), using standard processing")
             
             try:
-                structured_data = await extract_structured_data(extracted_text, document_type="auto")
+                quality_score = TextQualityChecker.get_quality_score(extracted_text)
+                page_images = None
+
+                if quality_score < MULTIMODAL_OCR_QUALITY_THRESHOLD:
+                    logger.info(
+                        f"OCR quality is low ({quality_score:.1f}); using multimodal Gemini fallback"
+                    )
+                    page_images = render_pdf_pages(pdf_bytes)
+
+                structured_data = await extract_structured_data(
+                    extracted_text,
+                    document_type="auto",
+                    page_images=page_images
+                )
                 logger.info(f"Extracted structured data: {structured_data.document_type}")
                 document_type = structured_data.document_type
             except Exception as e:

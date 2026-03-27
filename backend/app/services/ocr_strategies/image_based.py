@@ -1,210 +1,116 @@
 """
-Image-based OCR using Tesseract
+Image-based OCR strategies.
+
+PaddleOCR is preferred for dense scanned/photo documents. Tesseract remains
+available as a fallback when PaddleOCR is not installed or fails at runtime.
 """
-import pytesseract
-from pdf2image import convert_from_bytes
-from PIL import Image, ImageEnhance
-import logging
-from typing import Optional
 import io
+import logging
 import os
+from typing import Optional
+
+import pytesseract
+from PIL import Image, ImageEnhance, ImageFilter, ImageOps
 
 logger = logging.getLogger(__name__)
 
+
+class PaddleImageOCR:
+    """PaddleOCR wrapper with lazy loading so the app still boots without it."""
+
+    _ocr_instance = None
+    _import_error: Optional[Exception] = None
+
+    @classmethod
+    def is_available(cls) -> bool:
+        """Return True when PaddleOCR dependencies are importable."""
+        if cls._ocr_instance is not None:
+            return True
+
+        if cls._import_error is not None:
+            return False
+
+        try:
+            from paddleocr import PaddleOCR
+
+            cls._ocr_instance = PaddleOCR(
+                use_angle_cls=True,
+                lang="en",
+                show_log=False,
+            )
+            logger.info("PaddleOCR initialized successfully")
+            return True
+        except Exception as e:
+            cls._import_error = e
+            logger.warning(f"PaddleOCR unavailable, falling back to Tesseract: {e}")
+            return False
+
+    @classmethod
+    def extract_from_image(cls, image: Image.Image) -> str:
+        """Extract text from a PIL image with PaddleOCR."""
+        if not cls.is_available():
+            raise ValueError("PaddleOCR is not available")
+
+        try:
+            import numpy as np
+
+            image_array = np.array(image.convert("RGB"))
+            result = cls._ocr_instance.ocr(image_array, cls=True)
+            text_lines = []
+
+            if not result:
+                return ""
+
+            for block in result:
+                if not block:
+                    continue
+                for line in block:
+                    if not line or len(line) < 2:
+                        continue
+                    text = line[1][0] if line[1] else ""
+                    if text:
+                        text_lines.append(text.strip())
+
+            return "\n".join(text_lines).strip()
+        except Exception as e:
+            logger.error(f"PaddleOCR image extraction failed: {e}", exc_info=True)
+            raise ValueError(f"Failed to extract text with PaddleOCR: {str(e)}")
+
+
 class TesseractOCR:
-    """Tesseract-based OCR for scanned/image PDFs"""
-    
+    """Tesseract-based OCR fallback for scanned/image PDFs."""
+
     def __init__(self, tesseract_path: Optional[str] = None):
-        """
-        Initialize Tesseract OCR.
-        
-        Args:
-            tesseract_path: Path to tesseract executable (Windows only)
-        """
-        # Configure Tesseract path (Windows)
         import platform
-        if platform.system() == 'Windows':
-            if tesseract_path:
-                pytesseract.pytesseract.tesseract_cmd = tesseract_path
-            else:
-                # Default Windows installation path
-                pytesseract.pytesseract.tesseract_cmd = (
-                    r'C:\Program Files\Tesseract-OCR\tesseract.exe'
-                )
-        
-        # Set Poppler path for pdf2image
-        self.poppler_path = self._find_poppler_path()
-    
-    def _find_poppler_path(self) -> Optional[str]:
-        """Find Poppler installation"""
-        possible_paths = [
-            r'/tmp/poppler/poppler-24.08.0/Library/bin',
-            r'C:\Program Files\poppler\Library\bin',
-            r'C:\poppler\Library\bin',
-        ]
-        
-        for path in possible_paths:
-            if os.path.exists(path):
-                logger.info(f"Found Poppler at: {path}")
-                return path
-        
-        logger.warning("Poppler not found, pdf2image may fail")
-        return None
-    
-    def extract_from_pdf(self, pdf_bytes: bytes, dpi: int = 300) -> str:
-        """
-        Extract text from PDF using Tesseract OCR.
-        
-        Args:
-            pdf_bytes: PDF file as bytes
-            dpi: Resolution for PDF to image conversion (higher = better quality)
-            
-        Returns:
-            Extracted text
-        """
-        try:
-            logger.info("Converting PDF to images for Tesseract OCR...")
-            
-            # Convert PDF pages to images
-            convert_kwargs = {
-                'pdf_bytes': pdf_bytes,
-                'dpi': dpi,
-                'fmt': 'png'
-            }
-            
-            if self.poppler_path:
-                convert_kwargs['poppler_path'] = self.poppler_path
-            
-            images = convert_from_bytes(**convert_kwargs)
-            
-            logger.info(f"Processing {len(images)} pages with Tesseract OCR")
-            
-            text_parts = []
-            for i, image in enumerate(images):
-                logger.info(f"OCR processing page {i+1}/{len(images)}")
-                
-                # Preprocess image for better OCR
-                processed_image = self._preprocess_image(image)
-                
-                # Run Tesseract OCR
-                page_text = pytesseract.image_to_string(
-                    processed_image,
-                    config='--psm 6'  # Assume uniform text block
-                )
-                
-                if page_text.strip():
-                    text_parts.append(page_text)
-                    logger.info(f"Page {i+1}: Extracted {len(page_text)} characters")
-                else:
-                    logger.warning(f"Page {i+1}: No text extracted")
-            
-            full_text = "\n\n--- PAGE BREAK ---\n\n".join(text_parts)
-            logger.info(f"Tesseract OCR complete: {len(full_text)} total characters from {len(text_parts)} pages")
-            
-            return full_text
-            
-        except Exception as e:
-            logger.error(f"Tesseract OCR failed: {e}", exc_info=True)
-            raise ValueError(f"Failed to extract text with Tesseract: {str(e)}")
-    
-    def _preprocess_image(self, image: Image.Image) -> Image.Image:
-        """
-        Preprocess image to improve OCR accuracy.
-        
-        Techniques:
-        - Convert to grayscale
-        - Increase contrast
-        - Increase sharpness
-        
-        Args:
-            image: PIL Image
-            
-        Returns:
-            Preprocessed image
-        """
-        try:
-            # Convert to grayscale
-            image = image.convert('L')
-            
-            # Increase contrast
-            enhancer = ImageEnhance.Contrast(image)
-            image = enhancer.enhance(2.0)
-            
-            # Increase sharpness
-            enhancer = ImageEnhance.Sharpness(image)
-            image = enhancer.enhance(1.5)
-            
-            return image
-        except Exception as e:
-            logger.warning(f"Image preprocessing failed: {e}, using original")
-            return image
-    
-    def get_confidence(self, pdf_bytes: bytes) -> float:
-        """
-        Get OCR confidence score for first page.
-        
-        Args:
-            pdf_bytes: PDF file bytes
-            
-        Returns:
-            Confidence score 0-100
-        """
-        try:
-            convert_kwargs = {
-                'pdf_bytes': pdf_bytes,
-                'dpi': 150,
-                'last_page': 1
-            }
-            
-            if self.poppler_path:
-                convert_kwargs['poppler_path'] = self.poppler_path
-            
-            images = convert_from_bytes(**convert_kwargs)
-            
-            if not images:
-                return 0.0
-            
-            # Get detailed OCR data with confidence
-            data = pytesseract.image_to_data(
-                images[0], 
-                output_type=pytesseract.Output.DICT
+
+        if platform.system() == "Windows":
+            pytesseract.pytesseract.tesseract_cmd = (
+                tesseract_path or r"C:\Program Files\Tesseract-OCR\tesseract.exe"
             )
-            
-            # Calculate average confidence
-            confidences = [c for c in data['conf'] if c != -1]
-            if confidences:
-                avg_confidence = sum(confidences) / len(confidences)
-                logger.info(f"Tesseract confidence: {avg_confidence:.1f}%")
-                return avg_confidence
-            
-            return 0.0
-            
-        except Exception as e:
-            logger.error(f"Confidence check failed: {e}")
-            return 0.0
-    
-    def extract_from_image(self, image_bytes: bytes) -> str:
-        """
-        Extract text from a single image.
-        
-        Args:
-            image_bytes: Image file as bytes
-            
-        Returns:
-            Extracted text
-        """
+
+    @staticmethod
+    def preprocess_image(image: Image.Image) -> Image.Image:
+        """Apply lightweight preprocessing for Tesseract OCR."""
+        image = image.convert("L")
+        image = ImageOps.autocontrast(image)
+
+        contrast = ImageEnhance.Contrast(image)
+        image = contrast.enhance(2.2)
+
+        sharpness = ImageEnhance.Sharpness(image)
+        image = sharpness.enhance(1.8)
+
+        image = image.filter(ImageFilter.MedianFilter(size=3))
+        return image
+
+    def extract_from_image(self, image: Image.Image, psm: str = "6") -> str:
+        """Extract text from a single PIL image."""
         try:
-            image = Image.open(io.BytesIO(image_bytes))
-            processed_image = self._preprocess_image(image)
-            
-            text = pytesseract.image_to_string(
+            processed_image = self.preprocess_image(image)
+            return pytesseract.image_to_string(
                 processed_image,
-                config='--psm 6'
-            )
-            
-            logger.info(f"Extracted {len(text)} characters from image")
-            return text
-            
+                config=f"--oem 3 --psm {psm}"
+            ).strip()
         except Exception as e:
-            logger.error(f"Image OCR failed: {e}")
+            logger.error(f"Tesseract image OCR failed: {e}")
             raise ValueError(f"Failed to extract text from image: {str(e)}")

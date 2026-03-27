@@ -8,3 +8,7 @@ fhir.resources>=7.1.0
 python-dotenv>=1.0.0
 pydantic>=2.10.0
 aiofiles>=23.2.1
+pytesseract>=0.3.10
+Pillow>=10.0.0
+paddleocr>=2.8.1
+numpy>=1.26.0

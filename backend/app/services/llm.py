@@ -4,6 +4,7 @@ from app.models.schemas import LabReportData, PrescriptionData
 import json
 import logging
 from typing import Union, Dict, Any, List
+from PIL import Image
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +67,60 @@ Important instructions:
 - Include reference ranges exactly as shown
 - Return ONLY the JSON object, no explanations or markdown formatting"""
 
+    def _create_lab_report_multimodal_prompt(self, text: str) -> str:
+        """Create prompt for lab report extraction using OCR text plus page images."""
+        return f"""You are a medical data extraction system specialized in processing lab reports.
+
+You will receive:
+1. OCR text extracted from a PDF
+2. One or more page images from the same document
+
+The OCR text may be incomplete or noisy. Use the page images as the primary source of truth whenever they reveal more accurate information.
+
+OCR Text:
+{text}
+
+Return ONLY a valid JSON object with this EXACT structure:
+{{
+  "document_type": "lab_report",
+  "report_date": "YYYY-MM-DD or null",
+  "patient": {{
+    "name": "string or null",
+    "age": number or null,
+    "gender": "string or null",
+    "patient_id": "string or null",
+    "date_of_birth": "YYYY-MM-DD or null",
+    "contact": "string or null"
+  }},
+  "practitioner": {{
+    "name": "string or null",
+    "specialty": "string or null",
+    "practitioner_id": "string or null",
+    "contact": "string or null"
+  }},
+  "organization_name": "string or null",
+  "observations": [
+    {{
+      "test_name": "string (required)",
+      "value": "string or null",
+      "unit": "string or null",
+      "reference_range": "string or null",
+      "status": "final",
+      "interpretation": "normal/abnormal/high/low or null"
+    }}
+  ],
+  "diagnosis": "string or null",
+  "notes": "string or null"
+}}
+
+Important instructions:
+- Extract ALL lab test results visible in the images as separate observations
+- Prefer page-image evidence when OCR text looks corrupted
+- Use null for missing fields, never omit required structure
+- Normalize dates to YYYY-MM-DD format
+- Include reference ranges exactly as shown
+- Return ONLY the JSON object, no explanations or markdown formatting"""
+
     def _create_prescription_prompt(self, text: str) -> str:
         """Create prompt for prescription extraction"""
         return f"""You are a medical data extraction system specialized in processing prescriptions.
@@ -113,6 +168,60 @@ Important instructions:
 - Use null for missing fields, never omit required structure
 - Normalize dates to YYYY-MM-DD format
 - Include dosage with units (e.g., "500mg", "10ml")
+- Return ONLY the JSON object, no explanations or markdown formatting"""
+
+    def _create_prescription_multimodal_prompt(self, text: str) -> str:
+        """Create prompt for prescription extraction using OCR text plus page images."""
+        return f"""You are a medical data extraction system specialized in processing prescriptions.
+
+You will receive:
+1. OCR text extracted from a PDF
+2. One or more page images from the same document
+
+The OCR text may be incomplete or noisy. Use the page images as the primary source of truth whenever they reveal more accurate information.
+
+OCR Text:
+{text}
+
+Return ONLY a valid JSON object with this EXACT structure:
+{{
+  "document_type": "prescription",
+  "prescription_date": "YYYY-MM-DD or null",
+  "patient": {{
+    "name": "string or null",
+    "age": number or null,
+    "gender": "string or null",
+    "patient_id": "string or null",
+    "date_of_birth": "YYYY-MM-DD or null",
+    "contact": "string or null"
+  }},
+  "practitioner": {{
+    "name": "string or null",
+    "specialty": "string or null",
+    "practitioner_id": "string or null",
+    "contact": "string or null"
+  }},
+  "organization_name": "string or null",
+  "medications": [
+    {{
+      "medication_name": "string (required)",
+      "dosage": "string or null",
+      "frequency": "string or null",
+      "duration": "string or null",
+      "route": "oral/IV/topical/etc or null",
+      "instructions": "string or null"
+    }}
+  ],
+  "diagnosis": "string or null",
+  "notes": "string or null"
+}}
+
+Important instructions:
+- Extract ALL medications visible in the images as separate entries
+- Prefer page-image evidence when OCR text looks corrupted
+- Use null for missing fields, never omit required structure
+- Normalize dates to YYYY-MM-DD format
+- Include dosage with units
 - Return ONLY the JSON object, no explanations or markdown formatting"""
 
     def _clean_json_response(self, response_text: str) -> str:
@@ -172,14 +281,19 @@ Important instructions:
             # Last resort: try to extract just the data we need
             raise ValueError("Cannot repair JSON")
     
-    async def extract_lab_report(self, text: str) -> LabReportData:
+    async def extract_lab_report(self, text: str, page_images: List[Image.Image] | None = None) -> LabReportData:
         """Extract structured data from lab report text"""
         response_text = ""
         try:
-            prompt = self._create_lab_report_prompt(text)
-            
+            if page_images:
+                prompt = self._create_lab_report_multimodal_prompt(text)
+                content = [prompt, *page_images]
+            else:
+                prompt = self._create_lab_report_prompt(text)
+                content = prompt
+
             response = self.model.generate_content(
-                prompt,
+                content,
                 generation_config={
                     "temperature": settings.GEMINI_TEMPERATURE,
                     "max_output_tokens": settings.GEMINI_MAX_TOKENS,
@@ -210,14 +324,19 @@ Important instructions:
             logger.error(f"Lab report extraction error: {e}")
             raise ValueError(f"Failed to extract lab report data: {str(e)}")
     
-    async def extract_prescription(self, text: str) -> PrescriptionData:
+    async def extract_prescription(self, text: str, page_images: List[Image.Image] | None = None) -> PrescriptionData:
         """Extract structured data from prescription text"""
         response_text = ""
         try:
-            prompt = self._create_prescription_prompt(text)
-            
+            if page_images:
+                prompt = self._create_prescription_multimodal_prompt(text)
+                content = [prompt, *page_images]
+            else:
+                prompt = self._create_prescription_prompt(text)
+                content = prompt
+
             response = self.model.generate_content(
-                prompt,
+                content,
                 generation_config={
                     "temperature": settings.GEMINI_TEMPERATURE,
                     "max_output_tokens": settings.GEMINI_MAX_TOKENS,
@@ -248,7 +367,11 @@ Important instructions:
             logger.error(f"Prescription extraction error: {e}")
             raise ValueError(f"Failed to extract prescription data: {str(e)}")
     
-    async def auto_detect_and_extract(self, text: str) -> Union[LabReportData, PrescriptionData]:
+    async def auto_detect_and_extract(
+        self,
+        text: str,
+        page_images: List[Image.Image] | None = None
+    ) -> Union[LabReportData, PrescriptionData]:
         """Auto-detect document type and extract accordingly"""
         # Simple heuristic: check for common keywords
         text_lower = text.lower()
@@ -266,12 +389,16 @@ Important instructions:
         
         if lab_score >= rx_score:
             logger.info("Detected as lab report")
-            return await self.extract_lab_report(text)
+            return await self.extract_lab_report(text, page_images=page_images)
         else:
             logger.info("Detected as prescription")
-            return await self.extract_prescription(text)
+            return await self.extract_prescription(text, page_images=page_images)
 
-async def extract_structured_data(text: str, document_type: str = "auto") -> Union[LabReportData, PrescriptionData]:
+async def extract_structured_data(
+    text: str,
+    document_type: str = "auto",
+    page_images: List[Image.Image] | None = None
+) -> Union[LabReportData, PrescriptionData]:
     """
     Extract structured data from clinical document text using Gemini.
     
@@ -285,11 +412,11 @@ async def extract_structured_data(text: str, document_type: str = "auto") -> Uni
     extractor = GeminiExtractor()
     
     if document_type == "lab_report":
-        return await extractor.extract_lab_report(text)
+        return await extractor.extract_lab_report(text, page_images=page_images)
     elif document_type == "prescription":
-        return await extractor.extract_prescription(text)
+        return await extractor.extract_prescription(text, page_images=page_images)
     else:
-        return await extractor.auto_detect_and_extract(text)
+        return await extractor.auto_detect_and_extract(text, page_images=page_images)
 
 
 async def extract_structured_data_batch(
