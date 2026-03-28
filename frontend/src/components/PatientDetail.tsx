@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import {
-  ChevronLeft, User, FlaskConical, Pill, FileText, AlertCircle, Loader2, Trash2,
+  ChevronLeft, User, FlaskConical, Pill, FileText, AlertCircle, Loader2, Trash2, Briefcase,
 } from 'lucide-react';
 import { getPatient, deletePatient } from '../services/api';
 import type { StoredPatientRecord } from '../types/api';
@@ -280,9 +280,18 @@ const PatientDetail: React.FC = () => {
                         <div className="flex-1 min-w-0">
                           <div className="font-medium text-slate-900 dark:text-white truncate">{doc.filename}</div>
                           <div className="text-sm text-slate-500 dark:text-slate-400">
-                            {doc.document_type.replace('_', ' ')} · {formatDate(doc.upload_date)}
+                            {doc.document_type.replace(/_/g, ' ')} · {formatDate(doc.upload_date)}
                           </div>
                         </div>
+                        {doc.bill_no && (
+                          <Link
+                            to={`/cases/${doc.bill_no}`}
+                            className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 transition-colors whitespace-nowrap"
+                          >
+                            <Briefcase size={11} />
+                            {doc.bill_no}
+                          </Link>
+                        )}
                       </div>
                     ))}
                   </div>

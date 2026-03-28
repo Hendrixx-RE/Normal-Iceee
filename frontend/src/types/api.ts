@@ -41,6 +41,7 @@ export interface DocumentRecord {
   upload_date: string;
   document_type: string;
   extracted_text_preview?: string;
+  bill_no?: string;   // episode identifier — present when uploaded via pre-auth/discharge flow
 }
 
 export interface StoredPatientRecord {
@@ -217,6 +218,7 @@ export interface PreAuthData {
 export interface PreAuthResponse extends PreAuthData {
   id: string;
   bill_no?: string;
+  patient_id?: string;   // links to patients table once a doc is uploaded
   status: string;
   missing_required_fields: string[];
   created_at?: string;
@@ -360,6 +362,7 @@ export interface SettlementResponse extends SettlementData {
 export interface CaseSummary {
   bill_no: string;
   pre_auth_id: string;
+  patient_id?: string;   // links to patients table
   patient_name?: string;
   abha_id?: string;
   hospital_name?: string;

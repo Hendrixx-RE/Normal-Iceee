@@ -103,7 +103,7 @@ function PreAuthPanel({ caseData }: { caseData: CaseDetail }) {
             <Info label="Doctor" value={pa.doctor_name} />
             <Info label="Total Estimated Cost" value={fmt(pa.total_estimated_cost)} />
           </div>
-          <div className="mt-5">
+          <div className="mt-5 flex items-center gap-3 flex-wrap">
             <button
               onClick={handleGeneratePdf}
               disabled={generating}
@@ -112,6 +112,15 @@ function PreAuthPanel({ caseData }: { caseData: CaseDetail }) {
               {generating ? <Spinner sm /> : <Download size={14} />}
               Generate PDF
             </button>
+            {pa.patient_id && (
+              <Link
+                to={`/patients/${pa.patient_id}`}
+                className="flex items-center gap-2 px-4 py-2 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 text-sm font-semibold rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+              >
+                <FileText size={14} />
+                View Patient Record
+              </Link>
+            )}
           </div>
         </div>
       )}

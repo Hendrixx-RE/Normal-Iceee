@@ -57,6 +57,7 @@ async def list_cases():
         cases.append({
             "bill_no": bill_no,
             "pre_auth_id": pre_auth_id,
+            "patient_id": r.get("patient_id"),  # links to patients table
             "patient_name": r.get("patient_name"),
             "abha_id": r.get("abha_id"),
             "hospital_name": r.get("hospital_name"),

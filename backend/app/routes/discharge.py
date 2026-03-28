@@ -237,4 +237,42 @@ async def extract_discharge(
 
     sb.table("discharge_requests").update(updates).eq("id", discharge_id).execute()
 
+    # ── Full FHIR pipeline (non-fatal) ────────────────────────────────────────
+    # Every discharge document also flows through the standard FHIR pipeline so
+    # discharge diagnoses, procedures, and final billing data are recorded in the
+    # patients table and tagged with the episode's bill_no.
+    try:
+        bill_no = existing.get("bill_no")
+        pre_auth_id_local = existing.get("pre_auth_id")
+
+        # Resolve patient_id: prefer pre-auth's stored patient_id, then abha_id
+        pid_for_fhir = None
+        if pre_auth_id_local:
+            pa = sb.table("pre_auth_requests") \
+                .select("abha_id, patient_id") \
+                .eq("id", pre_auth_id_local).execute()
+            if pa.data:
+                pid_for_fhir = pa.data[0].get("patient_id") or pa.data[0].get("abha_id")
+
+        from app.services.llm import extract_structured_data
+        from app.services.fhir_mapper import generate_fhir_bundle
+        from app.services.patient_store import patient_store
+
+        full_data = await extract_structured_data(extracted_text, "auto", None)
+        fhir_bundle, billing_flags = await generate_fhir_bundle(full_data)
+
+        patient_store.save_patient(
+            structured_data=full_data,
+            fhir_bundle=fhir_bundle,
+            billing_flags=billing_flags,
+            filename=file.filename or "discharge_summary.pdf",
+            extracted_text=extracted_text,
+            bill_no=bill_no,
+            patient_id_override=pid_for_fhir,
+            document_type_override="discharge_summary",
+        )
+        logger.info(f"FHIR stored for discharge {discharge_id}: patient={pid_for_fhir}, bill={bill_no}")
+    except Exception as fhir_err:
+        logger.warning(f"FHIR pipeline (discharge doc) non-fatal: {fhir_err}")
+
     return extract

@@ -111,7 +111,7 @@ async def create_enhancement(pre_auth_id: str, data: EnhancementRequest):
     # Verify pre-auth exists and grab original diagnosis snapshot
     pa_res = (
         sb.table("pre_auth_requests")
-        .select("id, abha_id, provisional_diagnosis, icd10_diagnosis_code, total_estimated_cost")
+        .select("id, abha_id, bill_no, provisional_diagnosis, icd10_diagnosis_code, total_estimated_cost")
         .eq("id", pre_auth_id)
         .execute()
     )
@@ -134,6 +134,7 @@ async def create_enhancement(pre_auth_id: str, data: EnhancementRequest):
     row = {k: v for k, v in data.model_dump().items() if v is not None}
     row["pre_auth_id"] = pre_auth_id
     row["abha_id"] = pa.get("abha_id")
+    row["bill_no"] = pa.get("bill_no")   # direct episode link for easy querying
     row["sequence_no"] = next_seq
     row["status"] = "submitted"
     row["original_diagnosis"] = pa.get("provisional_diagnosis")

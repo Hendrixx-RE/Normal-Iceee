@@ -219,9 +219,20 @@ class PatientStore:
         billing_flags: List[BillingFlag],
         filename: str,
         extracted_text: str = "",
+        bill_no: Optional[str] = None,
+        patient_id_override: Optional[str] = None,
+        document_type_override: Optional[str] = None,
     ) -> tuple[str, str]:
         """
         Persist one processed document for a patient.
+
+        Args:
+            bill_no:              Episode identifier — tags all stored records with the pre-auth
+                                  bill number so the full episode is queryable in one shot.
+            patient_id_override:  Force a specific patient_id (e.g. ABHA ID from pre-auth)
+                                  instead of deriving it from the extracted document.
+            document_type_override: Override the auto-detected document type
+                                  (e.g. "discharge_summary").
 
         Returns:
             (patient_id, action)  where action is "created" or "updated"
@@ -229,7 +240,20 @@ class PatientStore:
         sb = get_supabase()
 
         # 1. Resolve patient identity
-        patient_id, is_existing = _resolve_patient_id(structured_data.patient)
+        if patient_id_override:
+            # Prefer the caller-supplied identity (e.g. ABHA ID from pre-auth form)
+            r = sb.table("patients").select("patient_id").eq("patient_id", patient_id_override).execute()
+            if r.data:
+                patient_id, is_existing = patient_id_override, True
+            else:
+                # Also try abha_id column (patient_id might be an ABHA-format string)
+                r2 = sb.table("patients").select("patient_id").eq("abha_id", patient_id_override).execute()
+                if r2.data:
+                    patient_id, is_existing = r2.data[0]["patient_id"], True
+                else:
+                    patient_id, is_existing = patient_id_override, False
+        else:
+            patient_id, is_existing = _resolve_patient_id(structured_data.patient)
 
         # 2. Fetch current record if exists (needed for merge)
         existing = None
@@ -242,14 +266,19 @@ class PatientStore:
         sb.table("patients").upsert(demo_row).execute()
 
         # 4. Insert document record
-        doc_type = "lab_report" if isinstance(structured_data, LabReportData) else "prescription"
-        doc_res = sb.table("patient_documents").insert({
-            "patient_id":               patient_id,
-            "filename":                 filename,
-            "document_type":            doc_type,
-            "upload_date":              _now(),
-            "extracted_text_preview":   extracted_text[:500] if extracted_text else None,
-        }).execute()
+        doc_type = document_type_override or (
+            "lab_report" if isinstance(structured_data, LabReportData) else "prescription"
+        )
+        doc_row: dict = {
+            "patient_id":             patient_id,
+            "filename":               filename,
+            "document_type":          doc_type,
+            "upload_date":            _now(),
+            "extracted_text_preview": extracted_text[:500] if extracted_text else None,
+        }
+        if bill_no:
+            doc_row["bill_no"] = bill_no
+        doc_res = sb.table("patient_documents").insert(doc_row).execute()
         document_id = doc_res.data[0]["id"] if doc_res.data else None
 
         # 5. Insert observations (deduplicated)
@@ -265,7 +294,7 @@ class PatientStore:
             for obs in structured_data.observations:
                 od = obs.model_dump()
                 if _obs_key(od) not in existing_keys:
-                    new_obs.append({
+                    ob_row: dict = {
                         "patient_id":      patient_id,
                         "document_id":     document_id,
                         "test_name":       obs.test_name,
@@ -277,7 +306,10 @@ class PatientStore:
                         "status":          obs.status or "final",
                         "interpretation":  obs.interpretation,
                         "service_date":    service_date,
-                    })
+                    }
+                    if bill_no:
+                        ob_row["bill_no"] = bill_no
+                    new_obs.append(ob_row)
             if new_obs:
                 sb.table("patient_observations").insert(new_obs).execute()
 
@@ -301,7 +333,7 @@ class PatientStore:
             for med in structured_data.medications:
                 md = med.model_dump()
                 if _med_key(md) not in existing_keys:
-                    new_meds.append({
+                    med_row: dict = {
                         "patient_id":        patient_id,
                         "document_id":       document_id,
                         "medication_name":   med.medication_name,
@@ -312,17 +344,23 @@ class PatientStore:
                         "route":             med.route,
                         "instructions":      med.instructions,
                         "prescription_date": structured_data.prescription_date,
-                    })
+                    }
+                    if bill_no:
+                        med_row["bill_no"] = bill_no
+                    new_meds.append(med_row)
             if new_meds:
                 sb.table("patient_medications").insert(new_meds).execute()
 
-        # 7. Insert FHIR bundle
-        bundle_res = sb.table("fhir_bundles").insert({
+        # 7. Insert FHIR bundle (tagged with bill_no when available)
+        bundle_row: dict = {
             "patient_id":    patient_id,
             "document_id":   document_id,
             "document_type": doc_type,
             "bundle":        fhir_bundle,
-        }).execute()
+        }
+        if bill_no:
+            bundle_row["bill_no"] = bill_no
+        bundle_res = sb.table("fhir_bundles").insert(bundle_row).execute()
         bundle_id = bundle_res.data[0]["id"] if bundle_res.data else None
 
         # 8. Auto-resolve flags from previous uploads that are now filled

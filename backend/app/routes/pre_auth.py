@@ -180,6 +180,44 @@ async def extract_medical(
         updates["updated_at"] = datetime.now(timezone.utc).isoformat()
         sb.table("pre_auth_requests").update(updates).eq("id", pre_auth_id).execute()
 
+    # ── Full FHIR pipeline (non-fatal) ────────────────────────────────────────
+    # Run the same pipeline as the simple upload route so that every document
+    # uploaded through the pre-auth flow also creates a FHIR bundle, updates
+    # patient observations/medications, and populates the patients table.
+    # All records are tagged with the episode's bill_no for full traceability.
+    try:
+        pa_meta = sb.table("pre_auth_requests") \
+            .select("bill_no, abha_id, patient_id") \
+            .eq("id", pre_auth_id).execute()
+        if pa_meta.data:
+            bill_no  = pa_meta.data[0].get("bill_no")
+            abha_id  = pa_meta.data[0].get("abha_id")
+
+            from app.services.llm import extract_structured_data
+            from app.services.fhir_mapper import generate_fhir_bundle
+            from app.services.patient_store import patient_store
+
+            full_data = await extract_structured_data(extracted_text, "auto", None)
+            fhir_bundle, billing_flags = await generate_fhir_bundle(full_data)
+
+            pid, _ = patient_store.save_patient(
+                structured_data=full_data,
+                fhir_bundle=fhir_bundle,
+                billing_flags=billing_flags,
+                filename=file.filename or "medical_report.pdf",
+                extracted_text=extracted_text,
+                bill_no=bill_no,
+                patient_id_override=abha_id,
+            )
+            # Back-link pre_auth to the patient record (idempotent update)
+            if pid:
+                sb.table("pre_auth_requests") \
+                    .update({"patient_id": pid, "updated_at": datetime.now(timezone.utc).isoformat()}) \
+                    .eq("id", pre_auth_id).execute()
+            logger.info(f"FHIR stored for pre-auth {pre_auth_id}: patient={pid}, bill={bill_no}")
+    except Exception as fhir_err:
+        logger.warning(f"FHIR pipeline (pre-auth doc) non-fatal: {fhir_err}")
+
     return extract
 
 

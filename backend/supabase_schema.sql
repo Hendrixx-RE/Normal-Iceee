@@ -434,3 +434,34 @@ create table if not exists settlement_requests (
 
 create index if not exists idx_settlement_bill_no  on settlement_requests(bill_no);
 create index if not exists idx_settlement_pre_auth on settlement_requests(pre_auth_id);
+
+-- ============================================================
+-- EPISODE LINKING: tag all clinical records with bill_no
+-- This allows querying the full episode history for a case.
+-- ============================================================
+
+-- Tag FHIR bundles with the episode bill_no
+alter table fhir_bundles add column if not exists bill_no text;
+
+-- Tag uploaded documents with the episode bill_no
+alter table patient_documents add column if not exists bill_no text;
+
+-- Tag lab observations with the episode bill_no
+alter table patient_observations add column if not exists bill_no text;
+
+-- Tag medications with the episode bill_no
+alter table patient_medications add column if not exists bill_no text;
+
+-- Link pre_auth back to the master patients record
+alter table pre_auth_requests add column if not exists patient_id text;
+
+-- Direct bill_no on enhancements (avoids a join through pre_auth)
+alter table enhancement_requests add column if not exists bill_no text;
+
+-- Indexes for episode-scoped queries
+create index if not exists idx_fhir_bundles_bill_no         on fhir_bundles(bill_no)         where bill_no is not null;
+create index if not exists idx_patient_documents_bill_no    on patient_documents(bill_no)     where bill_no is not null;
+create index if not exists idx_patient_observations_bill_no on patient_observations(bill_no)  where bill_no is not null;
+create index if not exists idx_patient_medications_bill_no  on patient_medications(bill_no)   where bill_no is not null;
+create index if not exists idx_pre_auth_patient_id          on pre_auth_requests(patient_id)  where patient_id is not null;
+create index if not exists idx_enhancement_bill_no          on enhancement_requests(bill_no)  where bill_no is not null;

@@ -157,6 +157,7 @@ class PreAuthRequest(BaseModel):
 class PreAuthResponse(PreAuthRequest):
     id: str
     bill_no: Optional[str] = None
+    patient_id: Optional[str] = None   # links to patients table
     status: str = "draft"
     missing_required_fields: List[str] = []
     created_at: Optional[str] = None
