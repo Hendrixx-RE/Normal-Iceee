@@ -4,6 +4,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.routes import process
 from app.routes import patients
+from app.routes import pre_auth
+from app.routes import enhancements
+from app.routes import discharge
+from app.routes import settlement
+from app.routes import cases
 from app.config import settings
 import logging
 
@@ -50,8 +55,13 @@ app.add_middleware(
 )
 
 # Include routers
-app.include_router(process.router,  prefix="/api", tags=["process"])
-app.include_router(patients.router, prefix="/api", tags=["patients"])
+app.include_router(process.router,   prefix="/api", tags=["process"])
+app.include_router(patients.router,  prefix="/api", tags=["patients"])
+app.include_router(pre_auth.router,       prefix="/api", tags=["pre-auth"])
+app.include_router(enhancements.router,   prefix="/api", tags=["enhancements"])
+app.include_router(discharge.router,      prefix="/api", tags=["discharge"])
+app.include_router(settlement.router,     prefix="/api", tags=["settlement"])
+app.include_router(cases.router,          prefix="/api", tags=["cases"])
 
 @app.get("/")
 async def root():

@@ -11,3 +11,4 @@ Pillow>=10.0.0
 paddleocr>=2.8.1
 numpy>=1.26.0
 supabase>=2.0.0
+fpdf2>=2.7.0

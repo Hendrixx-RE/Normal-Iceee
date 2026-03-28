@@ -1,14 +1,10 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
 @import "tailwindcss";
 
-:root {
-  --foreground-rgb: 15, 23, 42;
-  --background-start-rgb: 248, 250, 252;
-}
+/* Tailwind v4: enable class-based dark mode via .dark on <html> */
+@custom-variant dark (&:where(.dark, .dark *));
 
 body {
-  color: rgb(var(--foreground-rgb));
-  background: #F8FAFC;
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
 }
 

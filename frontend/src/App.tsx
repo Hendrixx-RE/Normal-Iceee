@@ -4,9 +4,13 @@ import FileUpload from './components/FileUpload';
 import ResultsView from './components/ResultsView';
 import PatientList from './components/PatientList';
 import PatientDetail from './components/PatientDetail';
+import PreAuthForm from './components/PreAuthForm';
+import EnhancementPage from './components/EnhancementPage';
+import CaseList from './components/CaseList';
+import CasePage from './components/CasePage';
 import { processPdf, healthCheck } from './services/api';
 import type { ProcessResponse } from './types/api';
-import { Activity, Sun, Moon, CheckCircle2, Users, Upload } from 'lucide-react';
+import { Activity, Sun, Moon, CheckCircle2, Users, Upload, ClipboardList, TrendingUp, Briefcase } from 'lucide-react';
 
 // ---------------------------------------------------------------------------
 // Upload page (previously the whole App)
@@ -126,7 +130,9 @@ function UploadPage() {
 // Root App with routing
 // ---------------------------------------------------------------------------
 function App() {
-  const [theme, setTheme] = useState<'light' | 'dark'>('dark');
+  const [theme, setTheme] = useState<'light' | 'dark'>(
+    () => (localStorage.getItem('theme') as 'light' | 'dark') || 'dark'
+  );
   const [apiStatus, setApiStatus] = useState<'checking' | 'online' | 'offline'>('checking');
   const location = useLocation();
 
@@ -142,6 +148,7 @@ function App() {
     } else {
       document.documentElement.classList.remove('dark');
     }
+    localStorage.setItem('theme', theme);
   }, [theme]);
 
   const toggleTheme = () => setTheme(t => t === 'light' ? 'dark' : 'light');
@@ -180,7 +187,10 @@ function App() {
           {/* Nav links */}
           <div className="flex items-center gap-1">
             {navLink('/', 'Upload', Upload)}
+            {navLink('/cases', 'Cases', Briefcase)}
             {navLink('/patients', 'Patients', Users)}
+            {navLink('/pre-auth', 'Pre-Auth', ClipboardList)}
+            {navLink('/enhancement', 'Enhancement', TrendingUp)}
           </div>
         </div>
 
@@ -215,6 +225,10 @@ function App() {
         <Route path="/"                    element={<UploadPage />} />
         <Route path="/patients"            element={<main className="max-w-6xl mx-auto py-12 px-6"><PatientList /></main>} />
         <Route path="/patients/:patientId" element={<main className="max-w-6xl mx-auto py-12 px-6"><PatientDetail /></main>} />
+        <Route path="/pre-auth"             element={<main className="max-w-6xl mx-auto py-12 px-6"><PreAuthForm /></main>} />
+        <Route path="/enhancement"          element={<main className="max-w-6xl mx-auto py-12 px-6"><EnhancementPage /></main>} />
+        <Route path="/cases"               element={<main className="max-w-6xl mx-auto py-12 px-6"><CaseList /></main>} />
+        <Route path="/cases/:billNo"       element={<main className="max-w-6xl mx-auto py-12 px-6"><CasePage /></main>} />
       </Routes>
 
       {/* Footer */}

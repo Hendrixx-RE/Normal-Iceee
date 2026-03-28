@@ -5,6 +5,20 @@ import type {
   PatientSummary,
   StoredPatientRecord,
   FlagsResponse,
+  AbhaPatient,
+  PreAuthData,
+  PreAuthResponse,
+  MedicalExtract,
+  EnhancementData,
+  EnhancementResponse,
+  PatientCaseHistory,
+  DischargeData,
+  DischargeResponse,
+  DischargeExtract,
+  SettlementData,
+  SettlementResponse,
+  CaseSummary,
+  CaseDetail,
 } from '../types/api';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
@@ -58,6 +72,130 @@ export const getPatientBundles = async (patientId: string): Promise<any[]> => {
 
 export const deletePatient = async (patientId: string): Promise<void> => {
   await api.delete(`/patients/${patientId}`);
+};
+
+// ---------------------------------------------------------------------------
+// Pre-Authorization endpoints
+// ---------------------------------------------------------------------------
+export const lookupAbha = async (abhaId: string): Promise<AbhaPatient> => {
+  const response = await api.get<AbhaPatient>(`/abha/${encodeURIComponent(abhaId)}`);
+  return response.data;
+};
+
+export const createPreAuth = async (data: PreAuthData): Promise<PreAuthResponse> => {
+  const response = await api.post<PreAuthResponse>('/pre-auth', data);
+  return response.data;
+};
+
+export const listPreAuths = async (): Promise<PreAuthResponse[]> => {
+  const response = await api.get<PreAuthResponse[]>('/pre-auth');
+  return response.data;
+};
+
+export const getPreAuth = async (id: string): Promise<PreAuthResponse> => {
+  const response = await api.get<PreAuthResponse>(`/pre-auth/${id}`);
+  return response.data;
+};
+
+export const updatePreAuth = async (id: string, data: PreAuthData): Promise<PreAuthResponse> => {
+  const response = await api.put<PreAuthResponse>(`/pre-auth/${id}`, data);
+  return response.data;
+};
+
+export const extractMedicalFromPdf = async (preAuthId: string, file: File): Promise<MedicalExtract> => {
+  const formData = new FormData();
+  formData.append('file', file);
+  const response = await api.post<MedicalExtract>(
+    `/pre-auth/${preAuthId}/extract-medical`,
+    formData,
+    { headers: { 'Content-Type': 'multipart/form-data' } }
+  );
+  return response.data;
+};
+
+export const generatePreAuthPdf = async (id: string): Promise<Blob> => {
+  const response = await api.post(`/pre-auth/${id}/generate-pdf`, {}, { responseType: 'blob' });
+  return response.data;
+};
+
+// ---------------------------------------------------------------------------
+// Enhancement endpoints
+// ---------------------------------------------------------------------------
+export const getPatientCaseHistory = async (abhaId: string): Promise<PatientCaseHistory[]> => {
+  const response = await api.get<PatientCaseHistory[]>(`/enhancement/patient/${encodeURIComponent(abhaId)}`);
+  return response.data;
+};
+
+export const createEnhancement = async (preAuthId: string, data: EnhancementData): Promise<EnhancementResponse> => {
+  const response = await api.post<EnhancementResponse>(`/enhancement/pre-auth/${preAuthId}`, data);
+  return response.data;
+};
+
+export const updateEnhancement = async (id: string, data: EnhancementData): Promise<EnhancementResponse> => {
+  const response = await api.put<EnhancementResponse>(`/enhancement/${id}`, data);
+  return response.data;
+};
+
+export const getEnhancementsForPreAuth = async (preAuthId: string): Promise<EnhancementResponse[]> => {
+  const response = await api.get<EnhancementResponse[]>(`/enhancement/pre-auth/${preAuthId}`);
+  return response.data;
+};
+
+// ---------------------------------------------------------------------------
+// Cases endpoints
+// ---------------------------------------------------------------------------
+export const listCases = async (): Promise<CaseSummary[]> => {
+  const response = await api.get<CaseSummary[]>('/cases');
+  return response.data;
+};
+
+export const getCase = async (billNo: string): Promise<CaseDetail> => {
+  const response = await api.get<CaseDetail>(`/cases/${encodeURIComponent(billNo)}`);
+  return response.data;
+};
+
+// ---------------------------------------------------------------------------
+// Discharge endpoints
+// ---------------------------------------------------------------------------
+export const createDischarge = async (data: DischargeData): Promise<DischargeResponse> => {
+  const response = await api.post<DischargeResponse>('/discharge', data);
+  return response.data;
+};
+
+export const updateDischarge = async (id: string, data: Partial<DischargeData>): Promise<DischargeResponse> => {
+  const response = await api.put<DischargeResponse>(`/discharge/${id}`, data);
+  return response.data;
+};
+
+export const extractDischargeData = async (dischargeId: string, file: File): Promise<DischargeExtract> => {
+  const formData = new FormData();
+  formData.append('file', file);
+  const response = await api.post<DischargeExtract>(`/discharge/${dischargeId}/extract`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  return response.data;
+};
+
+export const getDischargeByBill = async (billNo: string): Promise<DischargeResponse | null> => {
+  try {
+    const response = await api.get<DischargeResponse>(`/discharge/by-bill/${encodeURIComponent(billNo)}`);
+    return response.data;
+  } catch {
+    return null;
+  }
+};
+
+// ---------------------------------------------------------------------------
+// Settlement endpoints
+// ---------------------------------------------------------------------------
+export const createSettlement = async (data: SettlementData): Promise<SettlementResponse> => {
+  const response = await api.post<SettlementResponse>('/settlement', data);
+  return response.data;
+};
+
+export const updateSettlement = async (id: string, data: Partial<SettlementData>): Promise<SettlementResponse> => {
+  const response = await api.put<SettlementResponse>(`/settlement/${id}`, data);
+  return response.data;
 };
 
 export default api;
