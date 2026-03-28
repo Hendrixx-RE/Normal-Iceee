@@ -258,3 +258,258 @@ async def generate_pdf(pre_auth_id: str):
         media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+# ---------------------------------------------------------------------------
+# Cost Estimation — auto-fill billing fields from disease dataset
+# ---------------------------------------------------------------------------
+
+@router.get("/pre-auth/estimate-costs")
+async def estimate_costs(
+    icd10: str = "",
+    diagnosis: str = "",
+):
+    """
+    Given an ICD-10 code and/or diagnosis text, return estimated cost
+    breakdown from the embedded disease cost dataset.
+
+    Returns pre-auth form cost fields ready to be auto-filled:
+        room_rent_per_day, icu_charges_per_day, ot_charges,
+        professional_fees, medicines_consumables,
+        investigation_diagnostics_cost, total_estimated_cost,
+        expected_days_in_hospital, days_in_icu, room_type,
+        surgery_name, icd10_pcs_code
+    """
+    from app.services.cost_estimator import estimate_costs as _estimate
+    result = _estimate(icd10_code=icd10 or None, diagnosis_text=diagnosis or None)
+    if not result:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No cost estimate found for icd10='{icd10}' diagnosis='{diagnosis}'. "
+                   "Fill costs manually.",
+        )
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Dummy / Seed Data — pre-fill form with realistic test data
+# ---------------------------------------------------------------------------
+
+DUMMY_CASES = [
+    {
+        "label": "STEMI — Cardiac (PTCA)",
+        "data": {
+            "hospital_name": "Apollo Hospitals",
+            "hospital_location": "Jubilee Hills, Hyderabad",
+            "hospital_email": "claims@apollohyd.com",
+            "rohini_id": "H-AP-HYD-001",
+            "patient_name": "Ramesh Kumar Sharma",
+            "gender": "male",
+            "age": 54,
+            "date_of_birth": "1970-03-15",
+            "contact": "9876543210",
+            "policy_no": "HDFC-HI-2024-88321",
+            "insured_card_id": "IC-88321-A",
+            "doctor_name": "Dr. Suresh Reddy",
+            "doctor_contact": "9900112233",
+            "presenting_complaints": "Severe chest pain radiating to left arm for 3 hours, diaphoresis, shortness of breath",
+            "duration_of_illness": "3 hours",
+            "date_of_first_consultation": "2026-03-28",
+            "provisional_diagnosis": "ST-Elevation Myocardial Infarction (Anterior Wall STEMI)",
+            "icd10_diagnosis_code": "I21.0",
+            "clinical_findings": "ECG: ST elevation in V1-V4, Troponin I raised (12.4 ng/mL), BP 90/60 mmHg",
+            "treatment_surgical": True,
+            "surgery_name": "Percutaneous Transluminal Coronary Angioplasty (PTCA with Drug-Eluting Stent)",
+            "icd10_pcs_code": "02703ZZ",
+            "admission_date": "2026-03-28",
+            "admission_time": "14:30",
+            "admission_type": "Emergency",
+            "expected_days_in_hospital": 7,
+            "days_in_icu": 3,
+            "room_type": "single",
+        },
+    },
+    {
+        "label": "Knee Replacement — Orthopedic (TKR)",
+        "data": {
+            "hospital_name": "Fortis Memorial Research Institute",
+            "hospital_location": "Gurugram, Haryana",
+            "hospital_email": "cashless@fortishealth.com",
+            "rohini_id": "H-FR-GGN-005",
+            "patient_name": "Sunita Devi Agarwal",
+            "gender": "female",
+            "age": 62,
+            "date_of_birth": "1963-07-22",
+            "contact": "9811234567",
+            "policy_no": "MAX-GHI-2023-44512",
+            "insured_card_id": "IC-44512-B",
+            "doctor_name": "Dr. Ashok Rajgopal",
+            "doctor_contact": "9810099887",
+            "presenting_complaints": "Severe bilateral knee pain for 2 years, unable to walk more than 100 metres, failed conservative management",
+            "duration_of_illness": "2 years",
+            "date_of_first_consultation": "2026-03-01",
+            "provisional_diagnosis": "Primary Osteoarthritis of Knee (Grade IV Bilateral)",
+            "icd10_diagnosis_code": "M17.1",
+            "clinical_findings": "X-ray: Grade IV OA with bone-on-bone contact, varus deformity 12 degrees",
+            "treatment_surgical": True,
+            "surgery_name": "Total Knee Replacement (TKR) - Left Knee",
+            "icd10_pcs_code": "0SRC0J9",
+            "admission_date": "2026-04-05",
+            "admission_time": "08:00",
+            "admission_type": "Planned",
+            "expected_days_in_hospital": 7,
+            "days_in_icu": 0,
+            "room_type": "single",
+            "diabetes": True,
+            "diabetes_since": "2015",
+            "hypertension": True,
+            "hypertension_since": "2018",
+        },
+    },
+    {
+        "label": "Appendicitis — General Surgery (Laparoscopic)",
+        "data": {
+            "hospital_name": "Manipal Hospitals",
+            "hospital_location": "Whitefield, Bengaluru",
+            "hospital_email": "tpa@manipalbangalore.com",
+            "rohini_id": "H-MN-BLR-012",
+            "patient_name": "Vikram Singh Chauhan",
+            "gender": "male",
+            "age": 28,
+            "date_of_birth": "1998-11-05",
+            "contact": "7654321098",
+            "policy_no": "STAR-HI-2025-19834",
+            "insured_card_id": "IC-19834-C",
+            "doctor_name": "Dr. Priya Menon",
+            "doctor_contact": "9845001122",
+            "presenting_complaints": "Acute pain right iliac fossa for 12 hours, fever 101°F, nausea",
+            "duration_of_illness": "12 hours",
+            "date_of_first_consultation": "2026-03-28",
+            "provisional_diagnosis": "Acute Appendicitis",
+            "icd10_diagnosis_code": "K35.2",
+            "clinical_findings": "Tenderness at McBurney's point, rebound tenderness present, TLC 14,800",
+            "treatment_surgical": True,
+            "surgery_name": "Laparoscopic Appendicectomy",
+            "icd10_pcs_code": "0DTJ4ZZ",
+            "admission_date": "2026-03-28",
+            "admission_time": "22:15",
+            "admission_type": "Emergency",
+            "expected_days_in_hospital": 4,
+            "days_in_icu": 0,
+            "room_type": "twin-sharing",
+        },
+    },
+    {
+        "label": "Pneumonia — Respiratory (Medical Management)",
+        "data": {
+            "hospital_name": "Medanta The Medicity",
+            "hospital_location": "Sector 38, Gurugram",
+            "hospital_email": "cashless@medanta.org",
+            "rohini_id": "H-MD-GGN-002",
+            "patient_name": "Kavita Rani Mishra",
+            "gender": "female",
+            "age": 45,
+            "date_of_birth": "1981-01-30",
+            "contact": "9312456789",
+            "policy_no": "BAJAJ-AHI-2024-67123",
+            "insured_card_id": "IC-67123-D",
+            "doctor_name": "Dr. Randeep Guleria",
+            "doctor_contact": "9810055000",
+            "presenting_complaints": "High fever 103°F for 4 days, productive cough with yellow sputum, breathlessness",
+            "duration_of_illness": "4 days",
+            "date_of_first_consultation": "2026-03-25",
+            "provisional_diagnosis": "Severe Community-Acquired Pneumonia (CAP)",
+            "icd10_diagnosis_code": "J18.9",
+            "clinical_findings": "SpO2 88% on room air, bilateral crepitations, CXR: right lower lobe consolidation",
+            "treatment_medical_management": True,
+            "medical_management_details": "IV Piperacillin-Tazobactam, IV Azithromycin, oxygen support, nebulisation",
+            "admission_date": "2026-03-28",
+            "admission_time": "10:00",
+            "admission_type": "Emergency",
+            "expected_days_in_hospital": 7,
+            "days_in_icu": 2,
+            "room_type": "twin-sharing",
+            "diabetes": True,
+            "diabetes_since": "2019",
+        },
+    },
+    {
+        "label": "LSCS — Obstetrics (Maternity)",
+        "data": {
+            "hospital_name": "Rainbow Children's Hospital",
+            "hospital_location": "Banjara Hills, Hyderabad",
+            "hospital_email": "tpa@rainbowhospitals.in",
+            "rohini_id": "H-RB-HYD-008",
+            "patient_name": "Anjali Reddy",
+            "gender": "female",
+            "age": 29,
+            "date_of_birth": "1996-06-12",
+            "contact": "9988776655",
+            "policy_no": "NIAC-GHI-2022-33214",
+            "insured_card_id": "IC-33214-E",
+            "doctor_name": "Dr. Mohana Venugopal",
+            "doctor_contact": "9849001234",
+            "presenting_complaints": "38 weeks gestation, labour pains, prior C-section history",
+            "duration_of_illness": "38 weeks",
+            "date_of_first_consultation": "2026-03-28",
+            "provisional_diagnosis": "Pregnancy 38 Weeks - Elective Lower Segment Caesarean Section",
+            "icd10_diagnosis_code": "O82.0",
+            "clinical_findings": "Foetal heart rate normal, previous LSCS scar, cephalic presentation",
+            "treatment_surgical": True,
+            "surgery_name": "Lower Segment Caesarean Section (LSCS)",
+            "icd10_pcs_code": "10D00Z1",
+            "admission_date": "2026-04-01",
+            "admission_time": "07:30",
+            "admission_type": "Planned",
+            "expected_days_in_hospital": 5,
+            "days_in_icu": 0,
+            "room_type": "twin-sharing",
+            "maternity_g": "G2",
+            "maternity_p": "P1",
+            "maternity_l": "L1",
+            "maternity_a": "A0",
+        },
+    },
+]
+
+
+@router.get("/pre-auth/dummy-cases")
+async def list_dummy_cases():
+    """Return list of dummy case labels for the seed UI."""
+    return [{"index": i, "label": c["label"]} for i, c in enumerate(DUMMY_CASES)]
+
+
+@router.get("/pre-auth/dummy-cases/{index}")
+async def get_dummy_case(index: int):
+    """
+    Return a dummy pre-auth form payload for the given index.
+    Costs are auto-calculated from the disease dataset.
+    """
+    from app.services.cost_estimator import estimate_costs as _estimate
+
+    if index < 0 or index >= len(DUMMY_CASES):
+        raise HTTPException(status_code=404, detail="Dummy case index out of range")
+
+    case = DUMMY_CASES[index]
+    form_data = dict(case["data"])
+
+    # Auto-calculate costs from the disease dataset
+    icd10 = form_data.get("icd10_diagnosis_code")
+    diagnosis = form_data.get("provisional_diagnosis")
+    costs = _estimate(icd10_code=icd10, diagnosis_text=diagnosis)
+
+    if costs:
+        form_data.setdefault("room_rent_per_day",              costs["room_rent_per_day"])
+        form_data.setdefault("icu_charges_per_day",            costs["icu_charges_per_day"])
+        form_data.setdefault("ot_charges",                     costs["ot_charges"])
+        form_data.setdefault("professional_fees",              costs["professional_fees"])
+        form_data.setdefault("medicines_consumables",          costs["medicines_consumables"])
+        form_data.setdefault("investigation_diagnostics_cost", costs["investigation_diagnostics_cost"])
+        form_data.setdefault("other_hospital_expenses",        costs["other_hospital_expenses"])
+        form_data.setdefault("total_estimated_cost",           costs["total_estimated_cost"])
+        if costs.get("surgery_name") and not form_data.get("surgery_name"):
+            form_data["surgery_name"] = costs["surgery_name"]
+        if costs.get("icd10_pcs_code") and not form_data.get("icd10_pcs_code"):
+            form_data["icd10_pcs_code"] = costs["icd10_pcs_code"]
+
+    return {"label": case["label"], "data": form_data}

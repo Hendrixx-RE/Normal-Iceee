@@ -29,14 +29,14 @@ app = FastAPI(
 
 
 def _preload_paddleocr():
-    """Load PaddleOCR models in background so first request is fast."""
+    """Load doctr OCR models in background so first request is fast."""
     try:
         from app.services.ocr_strategies.image_based import PaddleOCREngine
-        logger.info("Preloading PaddleOCR models (background thread)...")
+        logger.info("Preloading doctr OCR models (background thread)...")
         PaddleOCREngine.get_instance()
-        logger.info("PaddleOCR models loaded — ready for requests")
+        logger.info("doctr OCR models loaded — ready for requests")
     except Exception as e:
-        logger.warning(f"PaddleOCR preload failed (will retry on first request): {e}")
+        logger.warning(f"doctr preload failed (will retry on first request): {e}")
 
 
 @app.on_event("startup")

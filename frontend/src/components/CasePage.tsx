@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useSearchParams } from 'react-router-dom';
 import {
   Upload, CheckCircle2, AlertTriangle, AlertCircle,
   Download, Plus, ArrowLeft, ArrowRight, IndianRupee, FileText, Lock, Send,
@@ -775,10 +775,14 @@ function SettlementContent({
 
 export default function CasePage() {
   const { billNo } = useParams<{ billNo: string }>();
+  const [searchParams] = useSearchParams();
   const [caseData, setCaseData] = useState<CaseDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeStep, setActiveStep] = useState(1);
+  const [activeStep, setActiveStep] = useState(() => {
+    const s = parseInt(searchParams.get('step') || '1', 10);
+    return s >= 1 && s <= 4 ? s : 1;
+  });
 
   const load = useCallback(async () => {
     if (!billNo) return;

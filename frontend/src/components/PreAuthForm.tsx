@@ -1,13 +1,15 @@
 import { useState, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import {
   Building2, User, Stethoscope, ClipboardList, Calendar,
   IndianRupee, Shield, FileText, Search, Upload, Download,
   ChevronDown, ChevronUp, AlertCircle, CheckCircle2,
+  Sparkles, ArrowRight, Loader2,
 } from 'lucide-react';
 import {
   lookupAbha, createPreAuth, updatePreAuth,
   extractMedicalFromPdf, generatePreAuthPdf,
+  estimateCosts,
 } from '../services/api';
 import type { PreAuthData, AbhaPatient } from '../types/api';
 
@@ -179,6 +181,9 @@ export default function PreAuthForm() {
   const [saving, setSaving] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
+  const [estimatingCosts, setEstimatingCosts] = useState(false);
+  const [costMsg, setCostMsg] = useState<string | null>(null);
+  const [nextLoading, setNextLoading] = useState(false);
 
   const set = useCallback((k: keyof PreAuthData | string, v: unknown) => {
     setForm(f => ({ ...f, [k]: v }));
@@ -218,6 +223,42 @@ export default function PreAuthForm() {
     } finally { setAbhaLoading(false); }
   };
 
+  // Auto-calculate costs from ICD-10 / diagnosis
+  const handleEstimateCosts = async () => {
+    const icd10 = (form.icd10_diagnosis_code as string) || '';
+    const diagnosis = (form.provisional_diagnosis as string) || '';
+    if (!icd10 && !diagnosis) {
+      setCostMsg('Enter ICD-10 code or provisional diagnosis first');
+      setTimeout(() => setCostMsg(null), 3000);
+      return;
+    }
+    setEstimatingCosts(true); setCostMsg(null);
+    try {
+      const costs = await estimateCosts(icd10, diagnosis);
+      setForm(f => ({
+        ...f,
+        room_rent_per_day:               costs.room_rent_per_day              ?? f.room_rent_per_day,
+        icu_charges_per_day:             costs.icu_charges_per_day            ?? f.icu_charges_per_day,
+        ot_charges:                      costs.ot_charges                     ?? f.ot_charges,
+        professional_fees:               costs.professional_fees              ?? f.professional_fees,
+        medicines_consumables:           costs.medicines_consumables          ?? f.medicines_consumables,
+        investigation_diagnostics_cost:  costs.investigation_diagnostics_cost ?? f.investigation_diagnostics_cost,
+        other_hospital_expenses:         costs.other_hospital_expenses        ?? f.other_hospital_expenses,
+        total_estimated_cost:            costs.total_estimated_cost           ?? f.total_estimated_cost,
+        expected_days_in_hospital:       costs.expected_days_in_hospital      ?? f.expected_days_in_hospital,
+        days_in_icu:                     costs.days_in_icu                    ?? f.days_in_icu,
+        room_type:                       costs.room_type                      ?? f.room_type,
+        surgery_name:                    costs.surgery_name                   ?? f.surgery_name,
+        icd10_pcs_code:                  costs.icd10_pcs_code                 ?? f.icd10_pcs_code,
+      }));
+      setCostMsg(`Costs estimated from: ${costs.matched_diagnosis} (${costs.matched_icd10})`);
+      setTimeout(() => setCostMsg(null), 5000);
+    } catch (e: any) {
+      setCostMsg(e.response?.data?.detail || 'No match found — fill manually');
+      setTimeout(() => setCostMsg(null), 4000);
+    } finally { setEstimatingCosts(false); }
+  };
+
   // Medical extraction
   const handleExtract = async (file: File) => {
     let id = preAuthId;
@@ -248,12 +289,11 @@ export default function PreAuthForm() {
   const handleSave = async () => {
     setSaving(true); setSaveMsg(null);
     try {
-      if (preAuthId) { await updatePreAuth(preAuthId, form); }
-      else {
+      if (preAuthId) {
+        await updatePreAuth(preAuthId, form);
+      } else {
         const r = await createPreAuth(form);
-        setPreAuthId(r.id);
-        setBillNo(r.bill_no ?? null);
-        if (r.bill_no) { navigate(`/cases/${encodeURIComponent(r.bill_no)}`); return; }
+        setPreAuthId(r.id); setBillNo(r.bill_no ?? null);
       }
       setSaveMsg('Saved successfully');
       setTimeout(() => setSaveMsg(null), 3000);
@@ -263,22 +303,36 @@ export default function PreAuthForm() {
   };
 
   const handleGeneratePdf = async () => {
+    if (!preAuthId) return;
     setGenerating(true);
     try {
-      let id = preAuthId;
-      let bn = billNo;
-      if (!id) {
-        const r = await createPreAuth(form);
-        id = r.id; setPreAuthId(id);
-        bn = r.bill_no ?? null; setBillNo(bn);
-      } else { await updatePreAuth(id, form); }
-      const blob = await generatePreAuthPdf(id!);
+      await updatePreAuth(preAuthId, form);
+      const blob = await generatePreAuthPdf(preAuthId);
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
-      a.href = url; a.download = `medi_assist_pre_auth_${id!.slice(0, 8)}.pdf`;
+      a.href = url; a.download = `medi_assist_pre_auth_${preAuthId.slice(0, 8)}.pdf`;
       a.click(); URL.revokeObjectURL(url);
-      if (bn) { navigate(`/cases/${encodeURIComponent(bn)}`); }
     } finally { setGenerating(false); }
+  };
+
+  // "Next" — creates the pre-auth (generating bill_no) then navigates to the case page
+  const handleNext = async () => {
+    setNextLoading(true);
+    try {
+      let id = preAuthId;
+      let bill = billNo;
+      if (!id) {
+        const r = await createPreAuth(form);
+        id = r.id; bill = r.bill_no ?? null;
+        setPreAuthId(id); setBillNo(bill);
+      } else {
+        await updatePreAuth(id, form);
+      }
+      if (bill) navigate(`/cases/${encodeURIComponent(bill)}?step=2`);
+    } catch (e: any) {
+      setSaveMsg('Failed: ' + (e.response?.data?.detail || e.message));
+      setTimeout(() => setSaveMsg(null), 4000);
+    } finally { setNextLoading(false); }
   };
 
   const boolToRadio = (val: boolean | undefined) =>
@@ -286,10 +340,36 @@ export default function PreAuthForm() {
 
   return (
     <div className="space-y-6 pb-32">
-      <div>
-        <h1 className="text-3xl font-extrabold text-slate-900 dark:text-white">Pre-Authorization Request</h1>
-        <p className="mt-1 text-slate-500 dark:text-slate-400 text-sm">
-          Medi Assist Insurance TPA Pvt Ltd &bull; Part C (Revised) &bull; Cashless Hospitalisation
+      {/* ── Case header — mirrors CasePage dark card ── */}
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl px-7 py-6 shadow-lg">
+        <div className="flex items-center gap-2 mb-3">
+          <FileText size={15} className="text-emerald-400" />
+          {billNo ? (
+            <>
+              <Link
+                to={`/cases/${encodeURIComponent(billNo)}`}
+                className="font-mono text-sm font-semibold bg-slate-800 text-slate-300 px-3 py-1 rounded-full border border-slate-700 hover:border-emerald-600 hover:text-emerald-400 transition-colors"
+              >
+                {billNo}
+              </Link>
+              <span className="text-xs px-2.5 py-1 rounded-full bg-slate-700 text-slate-300 font-semibold">
+                draft
+              </span>
+            </>
+          ) : (
+            <span className="font-mono text-sm bg-slate-800 text-slate-500 px-3 py-1 rounded-full border border-slate-700">
+              New Pre-Auth
+            </span>
+          )}
+        </div>
+        <h1 className="text-2xl font-extrabold text-white mb-0.5">
+          {(form.patient_name as string) || 'New Pre-Authorization Request'}
+        </h1>
+        <p className="text-slate-400 text-sm">
+          Medi Assist Insurance TPA Pvt Ltd · Part C (Revised) · Cashless Hospitalisation
+          {(form.hospital_name as string) && (
+            <span className="ml-2 text-slate-500">· {form.hospital_name as string}</span>
+          )}
         </p>
       </div>
 
@@ -498,6 +578,24 @@ export default function PreAuthForm() {
 
       {/* ── Estimated Costs ─────────────────────────────────────────── */}
       <Section title="Estimated Cost of Hospitalization (INR)" icon={IndianRupee}>
+        {/* Auto-calculate button */}
+        <div className="flex items-center gap-3 flex-wrap mb-1">
+          <button
+            onClick={handleEstimateCosts}
+            disabled={estimatingCosts}
+            className="flex items-center gap-2 px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white text-xs font-semibold rounded-xl transition-colors disabled:opacity-60"
+          >
+            {estimatingCosts
+              ? <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              : <Sparkles size={13} />}
+            {estimatingCosts ? 'Calculating…' : 'Auto-Calculate from Diagnosis'}
+          </button>
+          {costMsg && (
+            <span className={`text-xs font-medium ${costMsg.startsWith('Costs estimated') ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>
+              {costMsg}
+            </span>
+          )}
+        </div>
         <G2>
           <Field label="g) Per Day Room Rent + Nursing + Patient Diet" name="room_rent_per_day" form={form} onChange={set} type="number" placeholder="Rs." />
           <Field label="h) Expected Cost for Investigation + Diagnostics" name="investigation_diagnostics_cost" form={form} onChange={set} type="number" placeholder="Rs." />
@@ -582,7 +680,12 @@ export default function PreAuthForm() {
 
       {/* Sticky action bar */}
       <div className="fixed bottom-0 left-0 right-0 z-40 bg-white/90 dark:bg-slate-900/90 backdrop-blur-sm border-t border-slate-200 dark:border-slate-700 px-8 py-4 flex items-center justify-between gap-4">
-        <div className="text-sm text-slate-500 dark:text-slate-400">
+        <div className="text-sm text-slate-500 dark:text-slate-400 flex items-center gap-3">
+          {billNo && (
+            <span className="font-mono text-xs text-slate-400 bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-lg">
+              {billNo}
+            </span>
+          )}
           {saveMsg
             ? <span className={saveMsg.startsWith('Save failed') ? 'text-red-500' : 'text-emerald-500'}>{saveMsg}</span>
             : <span>{missingCount > 0 ? `${missingCount} required field${missingCount > 1 ? 's' : ''} pending` : 'All required fields filled'}</span>}
@@ -593,10 +696,16 @@ export default function PreAuthForm() {
             {saving ? <span className="w-4 h-4 border-2 border-emerald-400/30 border-t-emerald-500 rounded-full animate-spin" /> : <ClipboardList size={14} />}
             Save Draft
           </button>
-          <button onClick={handleGeneratePdf} disabled={generating}
+          <button onClick={handleGeneratePdf} disabled={generating || !preAuthId}
             className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold transition-colors disabled:opacity-50 flex items-center gap-2">
             {generating ? <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Download size={14} />}
             Generate &amp; Download PDF
+          </button>
+          <button onClick={handleNext} disabled={nextLoading || !form.abha_id}
+            title={!form.abha_id ? 'Enter ABHA ID first' : ''}
+            className="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2">
+            {nextLoading ? <Loader2 size={14} className="animate-spin" /> : <ArrowRight size={14} />}
+            Next: Enhancement
           </button>
         </div>
       </div>

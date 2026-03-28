@@ -118,6 +118,23 @@ export const generatePreAuthPdf = async (id: string): Promise<Blob> => {
   return response.data;
 };
 
+export const estimateCosts = async (icd10: string, diagnosis: string): Promise<Record<string, any>> => {
+  const response = await api.get('/pre-auth/estimate-costs', {
+    params: { icd10, diagnosis },
+  });
+  return response.data;
+};
+
+export const listDummyCases = async (): Promise<{ index: number; label: string }[]> => {
+  const response = await api.get('/pre-auth/dummy-cases');
+  return response.data;
+};
+
+export const getDummyCase = async (index: number): Promise<{ label: string; data: Record<string, any> }> => {
+  const response = await api.get(`/pre-auth/dummy-cases/${index}`);
+  return response.data;
+};
+
 // ---------------------------------------------------------------------------
 // Enhancement endpoints
 // ---------------------------------------------------------------------------
