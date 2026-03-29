@@ -9,7 +9,7 @@ function StepDot({ done, label }: { done: boolean; label: string }) {
     <div className="flex flex-col items-center gap-1">
       <div
         className={`w-3 h-3 rounded-full transition-colors ${
-          done ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600'
+          done ? 'bg-blue-500' : 'bg-slate-300 dark:bg-slate-600'
         }`}
         title={label}
       />
@@ -58,7 +58,7 @@ export default function CaseList() {
       {/* Header */}
       <div className="flex items-center justify-between mb-8">
         <div className="flex items-center gap-3">
-          <div className="bg-gradient-to-br from-emerald-500 to-emerald-600 p-2 rounded-xl shadow-lg shadow-emerald-500/20">
+          <div className="bg-blue-600 p-2 rounded-xl shadow-lg shadow-emerald-500/20">
             <Briefcase className="text-white" size={22} />
           </div>
           <div>
@@ -68,7 +68,7 @@ export default function CaseList() {
         </div>
         <Link
           to="/pre-auth"
-          className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-xl transition-colors shadow-sm"
+          className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-xl transition-colors shadow-sm"
         >
           <Plus size={16} />
           New Pre-Auth
@@ -83,7 +83,7 @@ export default function CaseList() {
           placeholder="Search by Bill No, patient name, or hospital..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-colors"
+          className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
         />
       </div>
 
@@ -133,7 +133,7 @@ export default function CaseList() {
                 <tr
                   key={c.bill_no}
                   onClick={() => navigate(`/cases/${encodeURIComponent(c.bill_no)}`)}
-                  className={`cursor-pointer transition-colors hover:bg-emerald-50 dark:hover:bg-emerald-900/10 ${
+                  className={`cursor-pointer transition-colors hover:bg-blue-50 dark:hover:bg-blue-900/10 ${
                     idx < filtered.length - 1 ? 'border-b border-slate-100 dark:border-slate-800' : ''
                   }`}
                 >

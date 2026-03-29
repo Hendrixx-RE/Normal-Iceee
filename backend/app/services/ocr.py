@@ -4,7 +4,7 @@ PDF text extraction pipeline (memory-optimized).
 Pipeline:
   PDF bytes → detect if text-based (PyMuPDF native) or image-based (scanned)
     → text-based: extract directly via PyMuPDF (no OCR needed)
-    → image-based: render ONE page at a time → PaddleOCR → collect text
+    → image-based: render ONE page at a time → doctr OCR → collect text
   Then render lightweight thumbnails for Gemini multimodal fallback if needed.
 
 Memory strategy:

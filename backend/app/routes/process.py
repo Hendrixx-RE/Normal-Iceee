@@ -3,6 +3,7 @@ import gc
 from fastapi import APIRouter, UploadFile, File, HTTPException
 from app.models.schemas import ProcessResponse, HealthResponse, LabReportData, PrescriptionData
 from app.services.ocr import extract_pdf_text, render_gemini_thumbnails
+from app.services.file_extractor import get_file_type, is_supported, extract_non_pdf
 from app.services.llm import (
     extract_structured_data,
     extract_structured_data_batch,
@@ -40,84 +41,107 @@ async def health_check():
 
 @router.post("/process-pdf", response_model=ProcessResponse)
 async def process_pdf(
-    file: UploadFile = File(..., description="PDF file (lab report or prescription)"),
+    file: UploadFile = File(..., description="Clinical document — PDF, image, Word, Excel, or CSV"),
 ):
     """
-    Process a clinical PDF and generate a FHIR R4 bundle.
+    Process a clinical document and generate a FHIR R4 bundle.
 
-    Memory-optimized pipeline:
-        1. Validate upload.
-        2. PaddleOCR each page one-at-a-time (constant memory).
-        3. Quality-gate the OCR output.
-        4. Only render Gemini thumbnails if OCR quality is poor.
-        5. Extract structured data via Gemini.
-        6. Generate FHIR bundle.
+    Supported formats: PDF, JPG/PNG/WEBP/TIFF (images), DOCX (Word), XLSX/XLS (Excel), CSV.
+
+    Pipeline:
+        1. Validate upload & detect file type.
+        2. Extract text (PDF → PyMuPDF+doctr, image → doctr OCR + Gemini fallback,
+           Word/Excel/CSV → native parsing).
+        3. Quality-gate (PDF only) — render thumbnails if OCR is poor.
+        4. Extract structured data via Gemini.
+        5. Generate FHIR bundle.
+        6. Persist patient record.
     """
     try:
         # ------------------------------------------------------------------
         # 1. Validate upload
         # ------------------------------------------------------------------
-        if not file.filename or not file.filename.lower().endswith(".pdf"):
-            raise HTTPException(status_code=400, detail="Only PDF files are supported")
+        if not file.filename:
+            raise HTTPException(status_code=400, detail="No filename provided")
 
-        pdf_bytes = await file.read()
+        if not is_supported(file.filename):
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Unsupported file type. Accepted: PDF, JPG, PNG, WEBP, TIFF, "
+                    "DOCX, XLSX, XLS, CSV"
+                ),
+            )
 
-        if len(pdf_bytes) == 0:
+        file_bytes = await file.read()
+
+        if len(file_bytes) == 0:
             raise HTTPException(status_code=400, detail="Uploaded file is empty")
 
-        if len(pdf_bytes) > settings.MAX_FILE_SIZE:
+        if len(file_bytes) > settings.MAX_FILE_SIZE:
             raise HTTPException(
                 status_code=400,
                 detail=f"File size exceeds {settings.MAX_FILE_SIZE // (1024 * 1024)}MB limit",
             )
 
-        logger.info(f"Processing PDF: {file.filename} ({len(pdf_bytes)} bytes)")
+        file_type = get_file_type(file.filename)
+        logger.info(f"Processing {file_type.upper()}: {file.filename} ({len(file_bytes)} bytes)")
 
         # ------------------------------------------------------------------
-        # 2. OCR — page-at-a-time PaddleOCR (memory efficient)
+        # 2. Text / image extraction (branched by file type)
         # ------------------------------------------------------------------
-        try:
-            extracted_text, pdf_bytes_ref = await extract_pdf_text(pdf_bytes)
-        except ValueError as exc:
-            logger.error(f"PDF rendering failed: {exc}")
-            return ProcessResponse(
-                success=False,
-                message="Failed to render PDF pages for OCR",
-                error=str(exc),
-            )
-        except Exception as exc:
-            logger.error(f"OCR pipeline error: {exc}", exc_info=True)
-            return ProcessResponse(
-                success=False,
-                message="Unexpected error during OCR extraction",
-                error=str(exc),
-            )
-
-        # ------------------------------------------------------------------
-        # 3. Quality gate — decide if we need Gemini multimodal
-        # ------------------------------------------------------------------
-        quality_score = TextQualityChecker.get_quality_score(extracted_text) if extracted_text else 0.0
-        logger.info(f"OCR quality: {quality_score:.1f}/100 | {len(extracted_text)} chars")
-
+        extracted_text = ""
         send_images = None
 
-        if quality_score >= OCR_QUALITY_GOOD:
-            # Good OCR → text-only (no extra images in RAM)
-            logger.info("Strategy: text-only (good OCR)")
-        elif quality_score >= OCR_QUALITY_USABLE:
-            # Mediocre → render small thumbnails for Gemini to cross-reference
-            logger.info("Strategy: text + thumbnails (mediocre OCR)")
-            send_images = render_gemini_thumbnails(pdf_bytes_ref)
-        else:
-            # Poor/empty → Gemini reads the images directly
-            logger.info("Strategy: thumbnails primary (poor/no OCR)")
-            send_images = render_gemini_thumbnails(pdf_bytes_ref)
-            if not extracted_text:
-                extracted_text = ""
+        if file_type == 'pdf':
+            try:
+                extracted_text, pdf_bytes_ref = await extract_pdf_text(file_bytes)
+            except ValueError as exc:
+                logger.error(f"PDF rendering failed: {exc}")
+                return ProcessResponse(
+                    success=False,
+                    message="Failed to render PDF pages for OCR",
+                    error=str(exc),
+                )
+            except Exception as exc:
+                logger.error(f"OCR pipeline error: {exc}", exc_info=True)
+                return ProcessResponse(
+                    success=False,
+                    message="Unexpected error during OCR extraction",
+                    error=str(exc),
+                )
 
-        # Free the PDF bytes now — we don't need them anymore
-        del pdf_bytes_ref
-        gc.collect()
+            # ----------------------------------------------------------------
+            # 3. Quality gate (PDF only) — decide if we need Gemini multimodal
+            # ----------------------------------------------------------------
+            quality_score = TextQualityChecker.get_quality_score(extracted_text) if extracted_text else 0.0
+            logger.info(f"OCR quality: {quality_score:.1f}/100 | {len(extracted_text)} chars")
+
+            if quality_score >= OCR_QUALITY_GOOD:
+                logger.info("Strategy: text-only (good OCR)")
+            elif quality_score >= OCR_QUALITY_USABLE:
+                logger.info("Strategy: text + thumbnails (mediocre OCR)")
+                send_images = render_gemini_thumbnails(pdf_bytes_ref)
+            else:
+                logger.info("Strategy: thumbnails primary (poor/no OCR)")
+                send_images = render_gemini_thumbnails(pdf_bytes_ref)
+
+            del pdf_bytes_ref
+            gc.collect()
+
+        else:
+            # Non-PDF: image, docx, excel, csv
+            try:
+                extracted_text, send_images = extract_non_pdf(file_bytes, file.filename)
+            except Exception as exc:
+                logger.error(f"File extraction failed: {exc}", exc_info=True)
+                return ProcessResponse(
+                    success=False,
+                    message=f"Failed to extract content from {file_type.upper()} file",
+                    error=str(exc),
+                )
+            # No quality gate for non-PDF — trust what we got
+            logger.info(f"Non-PDF extraction: {len(extracted_text)} chars, images={send_images is not None}")
 
         # ------------------------------------------------------------------
         # 4. Structured data extraction via Gemini
@@ -229,7 +253,7 @@ async def process_pdf(
                 structured_data=structured_data,
                 fhir_bundle=fhir_bundle,
                 billing_flags=billing_flags,
-                filename=file.filename or "unknown.pdf",
+                filename=file.filename or "unknown",
                 extracted_text=extracted_text,
             )
             logger.info(f"Patient record {patient_action}: {patient_id}")
@@ -240,7 +264,7 @@ async def process_pdf(
         # ------------------------------------------------------------------
         # 7. Success
         # ------------------------------------------------------------------
-        message = f"Successfully processed {document_type}"
+        message = f"Successfully processed {document_type} ({file_type.upper()})"
         if use_batch:
             message += f" (batch: {len(sections)} sections)"
 
@@ -261,6 +285,6 @@ async def process_pdf(
         logger.error(f"Unexpected error: {exc}", exc_info=True)
         return ProcessResponse(
             success=False,
-            message="An unexpected error occurred while processing the PDF",
+            message="An unexpected error occurred while processing the document",
             error=str(exc),
         )

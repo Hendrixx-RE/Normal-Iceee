@@ -228,6 +228,23 @@ export interface PreAuthResponse extends PreAuthData {
 // ---------------------------------------------------------------------------
 // Enhancement Requests
 // ---------------------------------------------------------------------------
+export interface EnhancementExtract {
+  reason?: string;
+  clinical_justification?: string;
+  updated_diagnosis?: string;
+  updated_icd10_code?: string;
+  updated_line_of_treatment?: string;
+  updated_surgery_name?: string;
+  updated_icd10_pcs_code?: string;
+  revised_room_rent_per_day?: number;
+  revised_icu_charges_per_day?: number;
+  revised_ot_charges?: number;
+  revised_surgeon_fees?: number;
+  revised_medicines_consumables?: number;
+  revised_investigations?: number;
+  revised_total_estimated_cost?: number;
+}
+
 export interface EnhancementData {
   pre_auth_id: string;
   abha_id?: string;

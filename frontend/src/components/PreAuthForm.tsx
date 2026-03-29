@@ -767,7 +767,7 @@ export default function PreAuthForm() {
             title={!form.abha_id ? 'Enter ABHA ID first' : ''}
             className="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2">
             {nextLoading ? <Loader2 size={14} className="animate-spin" /> : <ArrowRight size={14} />}
-            Next: Enhancement
+            Submit
           </button>
         </div>
       </div>

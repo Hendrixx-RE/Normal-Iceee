@@ -6,11 +6,12 @@ import {
 } from 'lucide-react';
 import {
   getCase, generatePreAuthPdf, createEnhancement,
+  extractEnhancementData,
   createDischarge, extractDischargeData, updateDischarge,
   createSettlement, updateSettlement,
 } from '../services/api';
 import type {
-  CaseDetail, EnhancementData, DischargeData, DischargeResponse,
+  CaseDetail, EnhancementData, EnhancementExtract, DischargeData, DischargeResponse,
   SettlementResponse,
 } from '../types/api';
 
@@ -31,12 +32,12 @@ function Spinner({ sm }: { sm?: boolean }) {
 
 function Badge({ status }: { status: string }) {
   const map: Record<string, string> = {
-    draft:     'bg-slate-700 text-slate-300',
-    submitted: 'bg-blue-900/60 text-blue-300',
-    pending:   'bg-amber-900/60 text-amber-300',
-    approved:  'bg-emerald-900/60 text-emerald-300',
-    rejected:  'bg-red-900/60 text-red-300',
-    paid:      'bg-purple-900/60 text-purple-300',
+    draft:     'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300',
+    submitted: 'bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300',
+    pending:   'bg-amber-100 dark:bg-amber-900/60 text-amber-700 dark:text-amber-300',
+    approved:  'bg-green-100 dark:bg-green-900/60 text-green-700 dark:text-green-300',
+    rejected:  'bg-red-100 dark:bg-red-900/60 text-red-700 dark:text-red-300',
+    paid:      'bg-purple-100 dark:bg-purple-900/60 text-purple-700 dark:text-purple-300',
   };
   return (
     <span className={`text-xs font-semibold px-2.5 py-1 rounded-full capitalize ${map[status] ?? map.pending}`}>
@@ -48,8 +49,8 @@ function Badge({ status }: { status: string }) {
 function Info({ label, value }: { label: string; value?: string | null }) {
   return (
     <div>
-      <p className="text-xs text-slate-500 mb-0.5">{label}</p>
-      <p className="text-sm font-medium text-slate-200">{value || '—'}</p>
+      <p className="text-xs text-slate-500 dark:text-slate-500 mb-0.5">{label}</p>
+      <p className="text-sm font-medium text-slate-800 dark:text-slate-200">{value || '—'}</p>
     </div>
   );
 }
@@ -61,11 +62,12 @@ function FormInput({
   type?: string; area?: boolean; span2?: boolean;
 }) {
   const cls =
-    'w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 text-sm text-slate-100 ' +
-    'placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-colors';
+    'w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 ' +
+    'bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-slate-100 ' +
+    'placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors';
   return (
     <div className={span2 ? 'col-span-2' : ''}>
-      <label className="block text-xs font-semibold text-slate-400 mb-1">{label}</label>
+      <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1">{label}</label>
       {area ? (
         <textarea rows={3} value={value} onChange={(e) => onChange(e.target.value)} className={cls + ' resize-none'} />
       ) : (
@@ -106,21 +108,21 @@ function Stepper({
               className={[
                 'w-11 h-11 rounded-full flex items-center justify-center font-bold text-sm transition-all duration-200 focus:outline-none',
                 step.status === 'done'
-                  ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/30'
+                  ? 'bg-blue-600 text-white shadow-sm'
                   : step.status === 'active'
-                  ? 'bg-slate-600 text-white ring-2 ring-emerald-400 ring-offset-2 ring-offset-slate-950'
+                  ? 'bg-white dark:bg-slate-800 text-blue-600 ring-2 ring-blue-500 ring-offset-2 ring-offset-slate-50 dark:ring-offset-slate-950'
                   : step.status === 'locked'
-                  ? 'bg-slate-800 text-slate-600 cursor-not-allowed border border-slate-700'
-                  : 'bg-slate-700 text-slate-300 hover:bg-slate-600 cursor-pointer',
+                  ? 'bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-600 cursor-not-allowed border border-slate-200 dark:border-slate-700'
+                  : 'bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600 cursor-pointer',
               ].join(' ')}
             >
               {step.status === 'done' ? <CheckCircle2 size={20} /> : step.status === 'locked' ? <Lock size={14} /> : step.id}
             </button>
             <span className={`text-xs mt-2 font-medium text-center whitespace-nowrap ${
-              step.status === 'active' ? 'text-white' :
-              step.status === 'done'   ? 'text-emerald-400' :
-              step.status === 'locked' ? 'text-slate-600' :
-              'text-slate-400'
+              step.status === 'active' ? 'text-blue-600 dark:text-blue-400' :
+              step.status === 'done'   ? 'text-slate-600 dark:text-slate-400' :
+              step.status === 'locked' ? 'text-slate-400 dark:text-slate-600' :
+              'text-slate-500 dark:text-slate-400'
             }`}>
               {step.label}
             </span>
@@ -129,7 +131,7 @@ function Stepper({
           {/* Connector line (not after last) */}
           {i < steps.length - 1 && (
             <div className={`flex-1 h-0.5 mt-5 mx-2 rounded-full transition-colors ${
-              step.status === 'done' ? 'bg-emerald-500' : 'bg-slate-700'
+              step.status === 'done' ? 'bg-blue-500' : 'bg-slate-200 dark:bg-slate-700'
             }`} />
           )}
         </div>
@@ -152,14 +154,13 @@ function PreAuthContent({
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const pa = caseData.pre_auth;
-  if (!pa) return <p className="text-slate-400 text-sm">No pre-auth data.</p>;
+  if (!pa) return <p className="text-slate-500 text-sm">No pre-auth data.</p>;
 
   const isAlreadySubmitted = pa.status === 'submitted' || pa.status === 'approved';
 
   const handleSubmit = async () => {
     setSubmitting(true);
     try {
-      // Generate + download the PDF (which also sets status → submitted on backend)
       const blob = await generatePreAuthPdf(pa.id);
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -168,7 +169,6 @@ function PreAuthContent({
       a.click();
       URL.revokeObjectURL(url);
       setSubmitted(true);
-      // Advance to Enhancement step after a short moment so user sees the success state
       setTimeout(onNext, 800);
     } finally {
       setSubmitting(false);
@@ -179,7 +179,7 @@ function PreAuthContent({
     <div className="space-y-6">
       {/* Already-submitted banner */}
       {isAlreadySubmitted && (
-        <div className="flex items-center gap-2.5 px-4 py-3 rounded-xl bg-emerald-950/40 border border-emerald-800 text-emerald-300 text-sm">
+        <div className="flex items-center gap-2.5 px-4 py-3 rounded-xl bg-green-50 dark:bg-green-950/40 border border-green-200 dark:border-green-800 text-green-700 dark:text-green-300 text-sm">
           <CheckCircle2 size={15} className="shrink-0" />
           Pre-auth has been submitted to TPA. You can still download the PDF or proceed to the next step.
         </div>
@@ -195,7 +195,7 @@ function PreAuthContent({
         <Info label="Policy No."         value={pa.policy_no} />
       </div>
 
-      <div className="h-px bg-slate-800" />
+      <div className="h-px bg-slate-100 dark:bg-slate-800" />
 
       <div className="grid grid-cols-2 md:grid-cols-3 gap-5">
         <Info label="Hospital"           value={pa.hospital_name} />
@@ -206,7 +206,7 @@ function PreAuthContent({
         <Info label="Room Type"          value={pa.room_type} />
       </div>
 
-      <div className="h-px bg-slate-800" />
+      <div className="h-px bg-slate-100 dark:bg-slate-800" />
 
       <div className="grid grid-cols-2 md:grid-cols-3 gap-5">
         <div className="col-span-2 md:col-span-3">
@@ -223,19 +223,17 @@ function PreAuthContent({
 
       {/* Actions */}
       <div className="flex items-center gap-3 pt-2 flex-wrap">
-        {/* Primary: Submit to TPA (generates PDF + advances step) */}
         {!isAlreadySubmitted && (
           <button
             onClick={handleSubmit}
             disabled={submitting || submitted}
-            className="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-xl transition-colors disabled:opacity-60"
+            className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-xl transition-colors disabled:opacity-60"
           >
             {submitting ? <Spinner sm /> : submitted ? <CheckCircle2 size={14} /> : <Send size={14} />}
             {submitting ? 'Generating & Submitting…' : submitted ? 'Submitted!' : 'Submit Pre-Auth to TPA'}
           </button>
         )}
 
-        {/* Secondary: just download without advancing */}
         <button
           onClick={async () => {
             const blob = await generatePreAuthPdf(pa.id);
@@ -246,17 +244,16 @@ function PreAuthContent({
             a.click();
             URL.revokeObjectURL(url);
           }}
-          className="flex items-center gap-2 px-5 py-2.5 border border-slate-700 text-slate-300 text-sm font-semibold rounded-xl hover:bg-slate-800 transition-colors"
+          className="flex items-center gap-2 px-5 py-2.5 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 text-sm font-semibold rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
         >
           <Download size={14} />
           Download PDF
         </button>
 
-        {/* If already submitted, show a "Next: Enhancement" button */}
         {isAlreadySubmitted && (
           <button
             onClick={onNext}
-            className="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-xl transition-colors"
+            className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-xl transition-colors"
           >
             Next: Enhancement <ArrowRight size={14} />
           </button>
@@ -265,7 +262,7 @@ function PreAuthContent({
         {pa.patient_id && (
           <Link
             to={`/patients/${pa.patient_id}`}
-            className="flex items-center gap-2 px-5 py-2.5 border border-slate-700 text-slate-300 text-sm font-semibold rounded-xl hover:bg-slate-800 transition-colors"
+            className="flex items-center gap-2 px-5 py-2.5 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 text-sm font-semibold rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
           >
             <FileText size={14} />
             View Patient Record
@@ -280,31 +277,79 @@ function PreAuthContent({
 // Step 2 — Enhancement content
 // ---------------------------------------------------------------------------
 
-function EnhancementContent({
-  caseData, onRefresh,
+function EnhancementForm({
+  preAuthId,
+  seqNo,
+  originalTotal,
+  onSave,
+  onCancel,
 }: {
-  caseData: CaseDetail;
-  onRefresh: () => void;
+  preAuthId: string;
+  seqNo: number;
+  originalTotal: number | null | undefined;
+  onSave: () => void;
+  onCancel: () => void;
 }) {
-  const [showForm, setShowForm] = useState(false);
-  const [saving, setSaving] = useState(false);
   const [form, setForm] = useState<Partial<EnhancementData>>({});
+  const [uploading, setUploading] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  const pa = caseData.pre_auth;
-  const enhancements = caseData.enhancements || [];
-
   const set = (k: keyof EnhancementData, v: unknown) => setForm((f) => ({ ...f, [k]: v }));
+  const setNum = (k: keyof EnhancementData, v: string) => set(k, v ? Number(v) : undefined);
+
+  // Compute revised total from line items
+  const lineTotal =
+    (form.revised_room_rent_per_day   || 0) +
+    (form.revised_icu_charges_per_day || 0) +
+    (form.revised_ot_charges          || 0) +
+    (form.revised_surgeon_fees        || 0) +
+    (form.revised_medicines_consumables || 0) +
+    (form.revised_investigations      || 0);
+
+  const revisedTotal = form.revised_total_estimated_cost ?? (lineTotal > 0 ? lineTotal : null);
+  const variance = originalTotal != null && revisedTotal != null ? revisedTotal - originalTotal : null;
+
+  const handleExtract = async (file: File) => {
+    setUploading(true); setErr(null);
+    try {
+      const extracted: EnhancementExtract = await extractEnhancementData(preAuthId, file);
+      setForm((f) => ({
+        ...f,
+        reason:                    extracted.reason                    ?? f.reason,
+        clinical_justification:    extracted.clinical_justification    ?? f.clinical_justification,
+        updated_diagnosis:         extracted.updated_diagnosis         ?? f.updated_diagnosis,
+        updated_icd10_code:        extracted.updated_icd10_code        ?? f.updated_icd10_code,
+        updated_line_of_treatment: extracted.updated_line_of_treatment ?? f.updated_line_of_treatment,
+        updated_surgery_name:      extracted.updated_surgery_name      ?? f.updated_surgery_name,
+        updated_icd10_pcs_code:    extracted.updated_icd10_pcs_code    ?? f.updated_icd10_pcs_code,
+        revised_room_rent_per_day:    extracted.revised_room_rent_per_day    ?? f.revised_room_rent_per_day,
+        revised_icu_charges_per_day:  extracted.revised_icu_charges_per_day  ?? f.revised_icu_charges_per_day,
+        revised_ot_charges:           extracted.revised_ot_charges           ?? f.revised_ot_charges,
+        revised_surgeon_fees:         extracted.revised_surgeon_fees         ?? f.revised_surgeon_fees,
+        revised_medicines_consumables: extracted.revised_medicines_consumables ?? f.revised_medicines_consumables,
+        revised_investigations:       extracted.revised_investigations       ?? f.revised_investigations,
+        revised_total_estimated_cost: extracted.revised_total_estimated_cost ?? f.revised_total_estimated_cost,
+      }));
+    } catch (e: any) {
+      setErr(e.response?.data?.detail || e.message || 'Extraction failed');
+    } finally {
+      setUploading(false);
+    }
+  };
 
   const handleSubmit = async () => {
-    if (!pa) return;
     if (!form.reason?.trim()) { setErr('Reason is required'); return; }
     setSaving(true); setErr(null);
     try {
-      await createEnhancement(pa.id, { ...form, pre_auth_id: pa.id, reason: form.reason! });
-      setShowForm(false);
-      setForm({});
-      onRefresh();
+      const payload: EnhancementData = {
+        ...form,
+        pre_auth_id: preAuthId,
+        reason: form.reason!,
+        revised_total_estimated_cost: revisedTotal ?? undefined,
+      };
+      await createEnhancement(preAuthId, payload);
+      onSave();
     } catch (e: any) {
       setErr(e.response?.data?.detail || e.message || 'Failed to save');
     } finally {
@@ -313,90 +358,252 @@ function EnhancementContent({
   };
 
   return (
-    <div className="space-y-4">
-      {/* Info banner */}
-      <div className="flex items-start gap-2 px-4 py-3 rounded-xl bg-slate-800 border border-slate-700 text-sm text-slate-400">
-        <AlertCircle size={15} className="mt-0.5 shrink-0 text-amber-400" />
-        Enhancement is <span className="text-slate-200 font-medium mx-1">optional</span>. Raise one if the diagnosis or treatment plan changes after the initial pre-auth.
+    <div className="space-y-6">
+      <h4 className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+        New Enhancement #{seqNo}
+      </h4>
+
+      {/* ── PDF Upload zone ── */}
+      <label className={`flex flex-col items-center justify-center border-2 border-dashed rounded-xl p-6 cursor-pointer transition-colors ${
+        uploading
+          ? 'border-blue-400 bg-blue-50 dark:bg-blue-950/20'
+          : 'border-slate-300 dark:border-slate-700 hover:border-blue-400 hover:bg-blue-50/40 dark:hover:bg-blue-950/10'
+      }`}>
+        <input type="file"
+          accept=".pdf,.jpg,.jpeg,.png,.webp,.tiff,.docx,.xlsx,.xls,.csv"
+          className="hidden"
+          disabled={uploading}
+          onChange={(e) => { const f = e.target.files?.[0]; if (f) handleExtract(f); }}
+        />
+        {uploading ? (
+          <>
+            <div className="w-8 h-8 border-4 border-blue-200 border-t-blue-500 rounded-full animate-spin mb-2" />
+            <p className="text-sm text-blue-600 dark:text-blue-400 font-medium">Extracting with Gemini AI…</p>
+            <p className="text-xs text-slate-400 mt-1">Reading diagnosis, procedure & cost updates</p>
+          </>
+        ) : (
+          <>
+            <Upload size={22} className="text-slate-400 mb-2" />
+            <p className="text-sm font-semibold text-slate-600 dark:text-slate-300">Upload Enhancement Document (Optional)</p>
+            <p className="text-xs text-slate-400 mt-1">Progress note, revised estimate, surgeon's letter — Gemini will auto-fill fields below</p>
+          </>
+        )}
+      </label>
+
+      {/* ── Section 1: Reason ── */}
+      <div>
+        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Reason for Enhancement</p>
+        <div className="grid grid-cols-1 gap-3">
+          <FormInput label="Reason *" value={form.reason || ''} onChange={(v) => set('reason', v)} span2 />
+          <FormInput label="Clinical Justification" value={form.clinical_justification || ''} onChange={(v) => set('clinical_justification', v)} span2 area />
+        </div>
       </div>
 
-      {/* Existing enhancements */}
+      <div className="h-px bg-slate-100 dark:bg-slate-800" />
+
+      {/* ── Section 2: Updated Clinical Details ── */}
+      <div>
+        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Updated Clinical Details</p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <FormInput label="Updated Diagnosis"          value={form.updated_diagnosis || ''} onChange={(v) => set('updated_diagnosis', v)} />
+          <FormInput label="Updated ICD-10 Code"        value={form.updated_icd10_code || ''} onChange={(v) => set('updated_icd10_code', v)} />
+          <FormInput label="Updated Surgery / Procedure" value={form.updated_surgery_name || ''} onChange={(v) => set('updated_surgery_name', v)} />
+          <FormInput label="Updated ICD-10 PCS Code"    value={form.updated_icd10_pcs_code || ''} onChange={(v) => set('updated_icd10_pcs_code', v)} />
+          <FormInput label="Updated Line of Treatment"  value={form.updated_line_of_treatment || ''} onChange={(v) => set('updated_line_of_treatment', v)} span2 />
+        </div>
+      </div>
+
+      <div className="h-px bg-slate-100 dark:bg-slate-800" />
+
+      {/* ── Section 3: Revised Cost Breakdown ── */}
+      <div>
+        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Revised Cost Breakdown</p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <FormInput label="Room Rent / Day (₹)"          value={form.revised_room_rent_per_day?.toString() || ''}    onChange={(v) => setNum('revised_room_rent_per_day', v)}    type="number" />
+          <FormInput label="ICU Charges / Day (₹)"        value={form.revised_icu_charges_per_day?.toString() || ''} onChange={(v) => setNum('revised_icu_charges_per_day', v)}  type="number" />
+          <FormInput label="OT / Surgery Charges (₹)"     value={form.revised_ot_charges?.toString() || ''}          onChange={(v) => setNum('revised_ot_charges', v)}            type="number" />
+          <FormInput label="Surgeon / Doctor Fees (₹)"    value={form.revised_surgeon_fees?.toString() || ''}        onChange={(v) => setNum('revised_surgeon_fees', v)}          type="number" />
+          <FormInput label="Medicines & Consumables (₹)"  value={form.revised_medicines_consumables?.toString() || ''} onChange={(v) => setNum('revised_medicines_consumables', v)} type="number" />
+          <FormInput label="Investigations (₹)"           value={form.revised_investigations?.toString() || ''}      onChange={(v) => setNum('revised_investigations', v)}        type="number" />
+          <FormInput label="Override Total (₹)"           value={form.revised_total_estimated_cost?.toString() || ''} onChange={(v) => setNum('revised_total_estimated_cost', v)} type="number" span2 />
+        </div>
+        <p className="text-xs text-slate-400 mt-1.5">Leave "Override Total" blank to auto-sum the line items above.</p>
+      </div>
+
+      {/* ── Section 4: Cost Comparison ── */}
+      {(originalTotal != null || revisedTotal != null) && (
+        <>
+          <div className="h-px bg-slate-100 dark:bg-slate-800" />
+          <div>
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Cost Comparison</p>
+            <div className="rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden text-sm">
+              <table className="w-full">
+                <tbody>
+                  <tr className="border-b border-slate-100 dark:border-slate-800">
+                    <td className="px-4 py-3 text-slate-500">Original Pre-Auth Total</td>
+                    <td className="px-4 py-3 font-semibold text-slate-800 dark:text-slate-200 text-right">{fmt(originalTotal)}</td>
+                  </tr>
+                  {lineTotal > 0 && (
+                    <>
+                      {form.revised_room_rent_per_day    ? <tr className="border-b border-slate-100 dark:border-slate-800"><td className="px-4 py-2.5 text-slate-400 pl-8">Room Rent / Day</td><td className="px-4 py-2.5 text-right text-slate-600 dark:text-slate-400">{fmt(form.revised_room_rent_per_day)}</td></tr> : null}
+                      {form.revised_icu_charges_per_day  ? <tr className="border-b border-slate-100 dark:border-slate-800"><td className="px-4 py-2.5 text-slate-400 pl-8">ICU Charges / Day</td><td className="px-4 py-2.5 text-right text-slate-600 dark:text-slate-400">{fmt(form.revised_icu_charges_per_day)}</td></tr> : null}
+                      {form.revised_ot_charges           ? <tr className="border-b border-slate-100 dark:border-slate-800"><td className="px-4 py-2.5 text-slate-400 pl-8">OT / Surgery</td><td className="px-4 py-2.5 text-right text-slate-600 dark:text-slate-400">{fmt(form.revised_ot_charges)}</td></tr> : null}
+                      {form.revised_surgeon_fees         ? <tr className="border-b border-slate-100 dark:border-slate-800"><td className="px-4 py-2.5 text-slate-400 pl-8">Surgeon Fees</td><td className="px-4 py-2.5 text-right text-slate-600 dark:text-slate-400">{fmt(form.revised_surgeon_fees)}</td></tr> : null}
+                      {form.revised_medicines_consumables ? <tr className="border-b border-slate-100 dark:border-slate-800"><td className="px-4 py-2.5 text-slate-400 pl-8">Medicines & Consumables</td><td className="px-4 py-2.5 text-right text-slate-600 dark:text-slate-400">{fmt(form.revised_medicines_consumables)}</td></tr> : null}
+                      {form.revised_investigations        ? <tr className="border-b border-slate-100 dark:border-slate-800"><td className="px-4 py-2.5 text-slate-400 pl-8">Investigations</td><td className="px-4 py-2.5 text-right text-slate-600 dark:text-slate-400">{fmt(form.revised_investigations)}</td></tr> : null}
+                    </>
+                  )}
+                  <tr className="border-b border-slate-100 dark:border-slate-800">
+                    <td className="px-4 py-3 text-slate-500">Revised Total</td>
+                    <td className="px-4 py-3 font-semibold text-slate-800 dark:text-slate-200 text-right">{fmt(revisedTotal)}</td>
+                  </tr>
+                  {variance != null && (
+                    <tr className="bg-slate-50 dark:bg-slate-800/60">
+                      <td className="px-4 py-3.5 font-bold text-slate-700 dark:text-slate-200">Difference</td>
+                      <td className={`px-4 py-3.5 font-bold text-right text-base ${variance > 0 ? 'text-red-500' : 'text-green-600'}`}>
+                        {variance > 0 ? '▲ +' : '▼ '}{fmt(Math.abs(variance))}
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
+      )}
+
+      {err && <p className="text-xs text-red-500">{err}</p>}
+
+      <div className="flex gap-2 pt-1">
+        <button onClick={handleSubmit} disabled={saving || uploading}
+          className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-xl transition-colors disabled:opacity-60 flex items-center gap-2">
+          {saving ? <Spinner sm /> : null} Save Enhancement
+        </button>
+        <button onClick={onCancel}
+          className="px-4 py-2.5 border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 text-sm rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors">
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function EnhancementContent({
+  caseData, onRefresh,
+}: {
+  caseData: CaseDetail;
+  onRefresh: () => void;
+}) {
+  const [showForm, setShowForm] = useState(false);
+
+  const pa = caseData.pre_auth;
+  const enhancements = caseData.enhancements || [];
+
+  return (
+    <div className="space-y-4">
+      {/* Info banner */}
+      <div className="flex items-start gap-2 px-4 py-3 rounded-xl bg-amber-50 dark:bg-slate-800 border border-amber-200 dark:border-slate-700 text-sm text-slate-600 dark:text-slate-400">
+        <AlertCircle size={15} className="mt-0.5 shrink-0 text-amber-500" />
+        Enhancement is <span className="text-slate-800 dark:text-slate-200 font-medium mx-1">optional</span>. Raise one if the diagnosis or treatment plan changes after the initial pre-auth.
+      </div>
+
+      {/* Existing enhancements list */}
       {enhancements.length === 0 && !showForm && (
-        <p className="text-slate-500 text-sm py-2">No enhancements raised yet for this case.</p>
+        <p className="text-slate-400 dark:text-slate-500 text-sm py-2">No enhancements raised yet for this case.</p>
       )}
 
       {enhancements.map((e) => (
-        <div key={e.id} className="p-4 bg-slate-800 rounded-xl border border-slate-700 text-sm">
-          <div className="flex items-center gap-2 mb-2">
-            <span className="w-6 h-6 rounded-full bg-slate-700 flex items-center justify-center text-xs font-bold text-slate-300">
+        <div key={e.id} className="p-5 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-sm space-y-4">
+          {/* Header row */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="w-6 h-6 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center text-xs font-bold text-slate-600 dark:text-slate-300 shrink-0">
               {e.sequence_no}
             </span>
             <Badge status={e.status} />
             {e.original_diagnosis && (
-              <span className="text-xs text-slate-500 ml-auto">
-                Original: {e.original_diagnosis}
-              </span>
+              <span className="text-xs text-slate-400 ml-auto truncate">Original: {e.original_diagnosis}</span>
             )}
           </div>
-          <p className="font-semibold text-slate-200 mb-1">{e.reason}</p>
-          {e.clinical_justification && (
-            <p className="text-slate-400 text-xs mb-2">{e.clinical_justification}</p>
+
+          {/* Reason */}
+          <div>
+            <p className="font-semibold text-slate-800 dark:text-slate-200">{e.reason}</p>
+            {e.clinical_justification && (
+              <p className="text-slate-500 dark:text-slate-400 text-xs mt-1">{e.clinical_justification}</p>
+            )}
+          </div>
+
+          {/* Updated clinical details */}
+          {(e.updated_diagnosis || e.updated_icd10_code || e.updated_surgery_name || e.updated_icd10_pcs_code || e.updated_line_of_treatment) && (
+            <>
+              <div className="h-px bg-slate-200 dark:bg-slate-700" />
+              <div>
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Updated Clinical Details</p>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  {e.updated_diagnosis          && <Info label="Updated Diagnosis"    value={e.updated_diagnosis} />}
+                  {e.updated_icd10_code         && <Info label="ICD-10 Code"          value={e.updated_icd10_code} />}
+                  {e.updated_surgery_name       && <Info label="Surgery / Procedure"  value={e.updated_surgery_name} />}
+                  {e.updated_icd10_pcs_code     && <Info label="ICD-10 PCS"           value={e.updated_icd10_pcs_code} />}
+                  {e.updated_line_of_treatment  && <Info label="Line of Treatment"    value={e.updated_line_of_treatment} />}
+                </div>
+              </div>
+            </>
           )}
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-3">
-            {e.updated_diagnosis && (
-              <Info label="Updated Diagnosis" value={e.updated_diagnosis} />
-            )}
-            {e.updated_icd10_code && (
-              <Info label="Updated ICD-10" value={e.updated_icd10_code} />
-            )}
-            {e.revised_total_estimated_cost != null && (
-              <Info label="Revised Cost" value={fmt(e.revised_total_estimated_cost)} />
-            )}
-          </div>
-          {e.original_total_cost != null && e.revised_total_estimated_cost != null && (
-            <div className={`mt-2 text-xs font-semibold ${
-              e.revised_total_estimated_cost > e.original_total_cost
-                ? 'text-red-400' : 'text-emerald-400'
-            }`}>
-              {e.revised_total_estimated_cost > e.original_total_cost ? '▲' : '▼'}
-              {' '}{fmt(Math.abs(e.revised_total_estimated_cost - e.original_total_cost))} vs original
-            </div>
+
+          {/* Revised costs */}
+          {(e.revised_room_rent_per_day || e.revised_icu_charges_per_day || e.revised_ot_charges ||
+            e.revised_surgeon_fees || e.revised_medicines_consumables || e.revised_investigations ||
+            e.revised_total_estimated_cost) && (
+            <>
+              <div className="h-px bg-slate-200 dark:bg-slate-700" />
+              <div>
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Revised Costs</p>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  {e.revised_room_rent_per_day      && <Info label="Room Rent/Day"          value={fmt(e.revised_room_rent_per_day)} />}
+                  {e.revised_icu_charges_per_day    && <Info label="ICU Charges/Day"        value={fmt(e.revised_icu_charges_per_day)} />}
+                  {e.revised_ot_charges             && <Info label="OT / Surgery"           value={fmt(e.revised_ot_charges)} />}
+                  {e.revised_surgeon_fees           && <Info label="Surgeon Fees"           value={fmt(e.revised_surgeon_fees)} />}
+                  {e.revised_medicines_consumables  && <Info label="Medicines"              value={fmt(e.revised_medicines_consumables)} />}
+                  {e.revised_investigations         && <Info label="Investigations"         value={fmt(e.revised_investigations)} />}
+                </div>
+                {e.revised_total_estimated_cost != null && (
+                  <div className="mt-3 flex items-center justify-between px-4 py-2.5 bg-white dark:bg-slate-700/50 rounded-lg border border-slate-200 dark:border-slate-600">
+                    <span className="text-sm font-semibold text-slate-500">Revised Total</span>
+                    <div className="text-right">
+                      <span className="text-base font-bold text-slate-900 dark:text-white">{fmt(e.revised_total_estimated_cost)}</span>
+                      {e.original_total_cost != null && (
+                        <span className={`ml-3 text-xs font-semibold ${
+                          e.revised_total_estimated_cost > e.original_total_cost ? 'text-red-500' : 'text-green-600'
+                        }`}>
+                          {e.revised_total_estimated_cost > e.original_total_cost ? '▲ +' : '▼ '}
+                          {fmt(Math.abs(e.revised_total_estimated_cost - e.original_total_cost))} vs original
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </>
           )}
         </div>
       ))}
 
-      {/* Add form */}
-      {showForm && (
-        <div className="p-5 bg-slate-800 rounded-xl border border-slate-700">
-          <h4 className="text-sm font-semibold text-slate-200 mb-4">
-            New Enhancement #{enhancements.length + 1}
-          </h4>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <FormInput label="Reason *" value={form.reason || ''} onChange={(v) => set('reason', v)} span2 />
-            <FormInput label="Clinical Justification" value={form.clinical_justification || ''} onChange={(v) => set('clinical_justification', v)} span2 area />
-            <FormInput label="Updated Diagnosis" value={form.updated_diagnosis || ''} onChange={(v) => set('updated_diagnosis', v)} />
-            <FormInput label="Updated ICD-10 Code" value={form.updated_icd10_code || ''} onChange={(v) => set('updated_icd10_code', v)} />
-            <FormInput label="Updated Line of Treatment" value={form.updated_line_of_treatment || ''} onChange={(v) => set('updated_line_of_treatment', v)} />
-            <FormInput label="Updated Surgery Name" value={form.updated_surgery_name || ''} onChange={(v) => set('updated_surgery_name', v)} />
-            <FormInput label="Revised Total Cost (₹)" value={form.revised_total_estimated_cost?.toString() || ''} onChange={(v) => set('revised_total_estimated_cost', v ? Number(v) : undefined)} type="number" />
-          </div>
-          {err && <p className="text-xs text-red-400 mt-2">{err}</p>}
-          <div className="flex gap-2 mt-4">
-            <button onClick={handleSubmit} disabled={saving}
-              className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-xl transition-colors disabled:opacity-60 flex items-center gap-2">
-              {saving ? <Spinner sm /> : null} Save Enhancement
-            </button>
-            <button onClick={() => { setShowForm(false); setErr(null); }}
-              className="px-4 py-2 border border-slate-700 text-slate-400 text-sm rounded-xl hover:bg-slate-700 transition-colors">
-              Cancel
-            </button>
-          </div>
+      {/* New enhancement form */}
+      {showForm && pa && (
+        <div className="p-5 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700">
+          <EnhancementForm
+            preAuthId={pa.id}
+            seqNo={enhancements.length + 1}
+            originalTotal={pa.total_estimated_cost}
+            onSave={() => { setShowForm(false); onRefresh(); }}
+            onCancel={() => setShowForm(false)}
+          />
         </div>
       )}
 
       {!showForm && (
         <button onClick={() => setShowForm(true)}
-          className="flex items-center gap-2 px-5 py-2.5 border border-dashed border-slate-700 hover:border-emerald-500 text-slate-400 hover:text-emerald-400 text-sm font-medium rounded-xl transition-colors">
+          className="flex items-center gap-2 px-5 py-2.5 border border-dashed border-slate-300 dark:border-slate-700 hover:border-blue-400 dark:hover:border-blue-500 text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 text-sm font-medium rounded-xl transition-colors">
           <Plus size={15} /> Add Enhancement
         </button>
       )}
@@ -485,12 +692,12 @@ function DischargeContent({
       {/* Revenue flags */}
       {discharge && !editing && (discharge.revenue_flags?.length ?? 0) > 0 && (
         <div className="space-y-2">
-          <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Revenue Reconciliation Flags</p>
+          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Revenue Reconciliation Flags</p>
           {discharge.revenue_flags.map((flag, i) => (
             <div key={i} className={`flex items-start gap-2 px-4 py-3 rounded-xl text-sm ${
               flag.severity === 'critical'
-                ? 'bg-red-950/50 border border-red-800 text-red-300'
-                : 'bg-amber-950/50 border border-amber-800 text-amber-300'
+                ? 'bg-red-50 dark:bg-red-950/50 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300'
+                : 'bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-300'
             }`}>
               {flag.severity === 'critical'
                 ? <AlertCircle size={15} className="shrink-0 mt-0.5" />
@@ -510,10 +717,10 @@ function DischargeContent({
             <Info label="ICD-10 Codes"     value={discharge.final_icd10_codes} />
             <Info label="Procedure Codes"  value={discharge.procedure_codes} />
           </div>
-          <div className="h-px bg-slate-800" />
+          <div className="h-px bg-slate-100 dark:bg-slate-800" />
           {/* Bill breakdown */}
           <div>
-            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Final Bill Breakdown</p>
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Final Bill Breakdown</p>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
               <Info label="Room Charges"          value={fmt(discharge.room_charges)} />
               <Info label="ICU Charges"           value={fmt(discharge.icu_charges)} />
@@ -522,13 +729,13 @@ function DischargeContent({
               <Info label="Investigation Charges" value={fmt(discharge.investigation_charges)} />
               <Info label="Other Charges"         value={fmt(discharge.other_charges)} />
             </div>
-            <div className="mt-4 flex items-center justify-between px-4 py-3 bg-slate-800 rounded-xl border border-slate-700">
-              <span className="text-sm font-semibold text-slate-400">Total Bill Amount</span>
-              <span className="text-lg font-bold text-white">{fmt(discharge.total_bill_amount)}</span>
+            <div className="mt-4 flex items-center justify-between px-4 py-3 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700">
+              <span className="text-sm font-semibold text-slate-500">Total Bill Amount</span>
+              <span className="text-lg font-bold text-slate-900 dark:text-white">{fmt(discharge.total_bill_amount)}</span>
             </div>
           </div>
           <button onClick={() => setEditing(true)}
-            className="text-sm text-emerald-400 hover:text-emerald-300 font-medium hover:underline">
+            className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 font-medium hover:underline">
             Edit / Re-upload
           </button>
         </div>
@@ -540,22 +747,22 @@ function DischargeContent({
           {/* Upload zone */}
           <label className={`flex flex-col items-center justify-center border-2 border-dashed rounded-xl p-8 cursor-pointer transition-colors ${
             uploading
-              ? 'border-emerald-500 bg-emerald-950/20'
-              : 'border-slate-700 hover:border-emerald-500 hover:bg-emerald-950/10'
+              ? 'border-blue-400 bg-blue-50 dark:bg-blue-950/20'
+              : 'border-slate-300 dark:border-slate-700 hover:border-blue-400 dark:hover:border-blue-500 hover:bg-blue-50 dark:hover:bg-blue-950/10'
           }`}>
             <input type="file" accept=".pdf" className="hidden" disabled={uploading}
               onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFileUpload(f); }} />
             {uploading ? (
               <>
-                <div className="w-9 h-9 border-4 border-emerald-700 border-t-emerald-400 rounded-full animate-spin mb-3" />
-                <p className="text-sm text-emerald-400 font-medium">Extracting with Gemini AI...</p>
-                <p className="text-xs text-slate-500 mt-1">Reading discharge summary, diagnoses, procedure codes &amp; bill</p>
+                <div className="w-9 h-9 border-4 border-blue-200 border-t-blue-500 rounded-full animate-spin mb-3" />
+                <p className="text-sm text-blue-600 dark:text-blue-400 font-medium">Extracting with Gemini AI...</p>
+                <p className="text-xs text-slate-400 mt-1">Reading discharge summary, diagnoses, procedure codes &amp; bill</p>
               </>
             ) : (
               <>
-                <Upload size={24} className="text-slate-500 mb-3" />
-                <p className="text-sm font-semibold text-slate-300">Upload Discharge Summary / Final Bill PDF</p>
-                <p className="text-xs text-slate-500 mt-1">Gemini will auto-fill all fields below</p>
+                <Upload size={24} className="text-slate-400 mb-3" />
+                <p className="text-sm font-semibold text-slate-600 dark:text-slate-300">Upload Discharge Summary / Final Bill PDF</p>
+                <p className="text-xs text-slate-400 mt-1">Gemini will auto-fill all fields below</p>
               </>
             )}
           </label>
@@ -575,16 +782,16 @@ function DischargeContent({
             <FormInput label="Total Bill Amount (₹)"          value={form.total_bill_amount?.toString() || ''} onChange={(v) => set('total_bill_amount', v ? Number(v) : undefined)} type="number" />
           </div>
 
-          {err && <p className="text-xs text-red-400">{err}</p>}
+          {err && <p className="text-xs text-red-500">{err}</p>}
 
           <div className="flex gap-3">
             <button onClick={handleSave} disabled={saving}
-              className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-xl transition-colors disabled:opacity-60 flex items-center gap-2">
+              className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-xl transition-colors disabled:opacity-60 flex items-center gap-2">
               {saving ? <Spinner sm /> : null} Save Discharge
             </button>
             {discharge && (
               <button onClick={() => { setEditing(false); setErr(null); }}
-                className="px-4 py-2.5 border border-slate-700 text-slate-400 text-sm rounded-xl hover:bg-slate-800 transition-colors">
+                className="px-4 py-2.5 border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 text-sm rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
                 Cancel
               </button>
             )}
@@ -624,7 +831,7 @@ function SettlementContent({
 
   if (!discharge) {
     return (
-      <div className="flex items-center gap-3 px-5 py-6 bg-amber-950/30 border border-amber-800 rounded-xl text-amber-300 text-sm">
+      <div className="flex items-center gap-3 px-5 py-6 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-xl text-amber-700 dark:text-amber-300 text-sm">
         <Lock size={16} className="shrink-0" />
         Complete the Discharge step first before creating a settlement.
       </div>
@@ -677,15 +884,15 @@ function SettlementContent({
     <div className="space-y-5">
       {/* Settlement status banner if exists */}
       {settlement && (
-        <div className="flex items-center justify-between px-5 py-4 bg-slate-800 rounded-xl border border-slate-700">
+        <div className="flex items-center justify-between px-5 py-4 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700">
           <div>
-            <p className="text-xs text-slate-400 mb-1">Settlement Status</p>
+            <p className="text-xs text-slate-500 mb-1">Settlement Status</p>
             <Badge status={settlement.status || 'pending'} />
           </div>
           {settlement.final_settlement_amount != null && (
             <div className="text-right">
-              <p className="text-xs text-slate-400 mb-1">Final Settlement</p>
-              <p className="text-2xl font-bold text-emerald-400">{fmt(settlement.final_settlement_amount)}</p>
+              <p className="text-xs text-slate-500 mb-1">Final Settlement</p>
+              <p className="text-2xl font-bold text-slate-900 dark:text-white">{fmt(settlement.final_settlement_amount)}</p>
             </div>
           )}
         </div>
@@ -693,33 +900,33 @@ function SettlementContent({
 
       {/* Comparison table */}
       <div>
-        <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Amount Comparison</p>
-        <div className="rounded-xl border border-slate-700 overflow-hidden text-sm">
+        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Amount Comparison</p>
+        <div className="rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden text-sm">
           <table className="w-full">
             <tbody>
-              <tr className="border-b border-slate-800">
-                <td className="px-4 py-3.5 text-slate-400">Pre-Auth Estimate</td>
-                <td className="px-4 py-3.5 font-semibold text-slate-200 text-right">{fmt(preAuthEstimate)}</td>
+              <tr className="border-b border-slate-100 dark:border-slate-800">
+                <td className="px-4 py-3.5 text-slate-500">Pre-Auth Estimate</td>
+                <td className="px-4 py-3.5 font-semibold text-slate-800 dark:text-slate-200 text-right">{fmt(preAuthEstimate)}</td>
               </tr>
-              <tr className="border-b border-slate-800">
-                <td className="px-4 py-3.5 text-slate-400">Final Bill (Claimed)</td>
-                <td className="px-4 py-3.5 font-semibold text-slate-200 text-right">{fmt(claimedAmount)}</td>
+              <tr className="border-b border-slate-100 dark:border-slate-800">
+                <td className="px-4 py-3.5 text-slate-500">Final Bill (Claimed)</td>
+                <td className="px-4 py-3.5 font-semibold text-slate-800 dark:text-slate-200 text-right">{fmt(claimedAmount)}</td>
               </tr>
               {variance != null && (
-                <tr className="border-b border-slate-800">
-                  <td className="px-4 py-3.5 text-slate-400">Variance</td>
-                  <td className={`px-4 py-3.5 font-semibold text-right ${variance > 0 ? 'text-red-400' : 'text-emerald-400'}`}>
+                <tr className="border-b border-slate-100 dark:border-slate-800">
+                  <td className="px-4 py-3.5 text-slate-500">Variance</td>
+                  <td className={`px-4 py-3.5 font-semibold text-right ${variance > 0 ? 'text-red-500' : 'text-green-600'}`}>
                     {variance > 0 ? '▲ +' : '▼ '}{fmt(Math.abs(variance))}
                   </td>
                 </tr>
               )}
               <tr>
-                <td className="px-4 py-3.5 text-slate-400">Deduction</td>
-                <td className="px-4 py-3.5 font-semibold text-right text-amber-400">– {fmt(deductionNum)}</td>
+                <td className="px-4 py-3.5 text-slate-500">Deduction</td>
+                <td className="px-4 py-3.5 font-semibold text-right text-amber-600">– {fmt(deductionNum)}</td>
               </tr>
-              <tr className="bg-slate-800/60">
-                <td className="px-4 py-4 font-bold text-slate-200">Settlement Amount</td>
-                <td className="px-4 py-4 font-bold text-emerald-400 text-right text-lg">
+              <tr className="bg-slate-50 dark:bg-slate-800/60">
+                <td className="px-4 py-4 font-bold text-slate-700 dark:text-slate-200">Settlement Amount</td>
+                <td className="px-4 py-4 font-bold text-blue-600 dark:text-blue-400 text-right text-lg">
                   {fmt(settlement?.final_settlement_amount ?? finalAmount)}
                 </td>
               </tr>
@@ -736,12 +943,12 @@ function SettlementContent({
         <FormInput label="Settlement Date"        value={settlementDate}   onChange={setSettlementDate}  type="date" />
       </div>
 
-      {err && <p className="text-xs text-red-400">{err}</p>}
+      {err && <p className="text-xs text-red-500">{err}</p>}
 
       {/* Action buttons */}
       {!settlement ? (
         <button onClick={handleCreate} disabled={saving}
-          className="flex items-center gap-2 px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-xl transition-colors disabled:opacity-60">
+          className="flex items-center gap-2 px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-xl transition-colors disabled:opacity-60">
           {saving ? <Spinner sm /> : <IndianRupee size={14} />}
           Create Settlement
         </button>
@@ -750,9 +957,9 @@ function SettlementContent({
           {(['approved', 'rejected', 'paid'] as const).map((s) => {
             const labels: Record<string, string> = { approved: '✓ Approve', rejected: '✗ Reject', paid: '💳 Mark Paid' };
             const colors: Record<string, string> = {
-              approved: 'bg-emerald-700 hover:bg-emerald-600',
-              rejected: 'bg-red-800 hover:bg-red-700',
-              paid:     'bg-purple-800 hover:bg-purple-700',
+              approved: 'bg-green-600 hover:bg-green-700',
+              rejected: 'bg-red-600 hover:bg-red-700',
+              paid:     'bg-purple-600 hover:bg-purple-700',
             };
             return (
               <button key={s} onClick={() => handleStatusChange(s)}
@@ -802,16 +1009,16 @@ export default function CasePage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-32">
-        <div className="w-10 h-10 border-4 border-slate-700 border-t-emerald-500 rounded-full animate-spin" />
+        <div className="w-10 h-10 border-4 border-slate-200 dark:border-slate-700 border-t-blue-500 rounded-full animate-spin" />
       </div>
     );
   }
 
   if (error || !caseData) {
     return (
-      <div className="p-6 bg-red-950/30 border border-red-800 rounded-2xl text-red-300">
+      <div className="p-6 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 rounded-2xl text-red-700 dark:text-red-300">
         <p className="font-semibold">{error || 'Case not found'}</p>
-        <Link to="/cases" className="text-sm underline mt-2 inline-block text-red-400">Back to Cases</Link>
+        <Link to="/cases" className="text-sm underline mt-2 inline-block text-red-500">Back to Cases</Link>
       </div>
     );
   }
@@ -875,52 +1082,52 @@ export default function CasePage() {
       {/* Back */}
       <Link
         to="/cases"
-        className="inline-flex items-center gap-1.5 text-sm text-slate-400 hover:text-white mb-6 transition-colors"
+        className="inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-800 dark:hover:text-white mb-6 transition-colors"
       >
         <ArrowLeft size={15} /> All Cases
       </Link>
 
-      {/* ── Case header card (dark, matches screenshot) ── */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl px-7 py-6 mb-8 shadow-lg">
+      {/* Case header card */}
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl px-7 py-6 mb-8 shadow-sm">
         <div className="flex items-center gap-2 mb-4">
-          <FileText size={16} className="text-emerald-400" />
-          <span className="font-mono text-sm font-semibold bg-slate-800 text-slate-300 px-3 py-1 rounded-full border border-slate-700">
+          <FileText size={16} className="text-slate-400" />
+          <span className="font-mono text-sm font-semibold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 px-3 py-1 rounded-full border border-slate-200 dark:border-slate-700">
             {caseData.bill_no}
           </span>
           {pa && <Badge status={pa.status} />}
         </div>
-        <h1 className="text-3xl font-extrabold text-white mb-1">
+        <h1 className="text-3xl font-extrabold text-slate-900 dark:text-white mb-1">
           {pa?.patient_name || 'Unknown Patient'}
         </h1>
-        <p className="text-slate-400 text-sm">
+        <p className="text-slate-500 text-sm">
           {[pa?.hospital_name, pa?.admission_date].filter(Boolean).join(' · ')}
           {pa?.abha_id && (
-            <span className="ml-3 text-slate-500">ABHA: {pa.abha_id}</span>
+            <span className="ml-3 text-slate-400">ABHA: {pa.abha_id}</span>
           )}
         </p>
       </div>
 
-      {/* ── Stepper ── */}
+      {/* Stepper */}
       <Stepper steps={steps} activeStep={activeStep} onStepClick={setActiveStep} />
 
-      {/* ── Active step content card ── */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl shadow-lg overflow-hidden">
+      {/* Active step content card */}
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden">
         {/* Step content header */}
-        <div className="px-7 py-5 border-b border-slate-800">
+        <div className="px-7 py-5 border-b border-slate-100 dark:border-slate-800">
           <div className="flex items-center gap-3">
             <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${
               steps[activeStep - 1].status === 'done'
-                ? 'bg-emerald-500 text-white'
-                : 'bg-slate-700 text-slate-300'
+                ? 'bg-blue-600 text-white'
+                : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
             }`}>
               {steps[activeStep - 1].status === 'done' ? <CheckCircle2 size={16} /> : activeStep}
             </div>
             <div>
-              <h2 className="text-base font-bold text-white">{stepTitles[activeStep]}</h2>
-              <p className="text-xs text-slate-500 mt-0.5">{stepDescriptions[activeStep]}</p>
+              <h2 className="text-base font-bold text-slate-900 dark:text-white">{stepTitles[activeStep]}</h2>
+              <p className="text-xs text-slate-400 mt-0.5">{stepDescriptions[activeStep]}</p>
             </div>
             {activeStep === 2 && (
-              <span className="ml-auto text-xs px-2.5 py-1 rounded-full bg-slate-800 border border-slate-700 text-slate-400">
+              <span className="ml-auto text-xs px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-500">
                 Optional
               </span>
             )}
@@ -945,22 +1152,22 @@ export default function CasePage() {
         </div>
 
         {/* Step navigation footer */}
-        <div className="px-7 py-4 border-t border-slate-800 flex items-center justify-between">
+        <div className="px-7 py-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
           <button
             onClick={() => setActiveStep((s) => Math.max(1, s - 1))}
             disabled={activeStep === 1}
-            className="flex items-center gap-2 px-4 py-2 text-sm text-slate-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+            className="flex items-center gap-2 px-4 py-2 text-sm text-slate-400 hover:text-slate-700 dark:hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
           >
             <ArrowLeft size={14} /> Previous
           </button>
-          <span className="text-xs text-slate-600">{activeStep} / 4</span>
+          <span className="text-xs text-slate-400">{activeStep} / 4</span>
           <button
             onClick={() => {
               const next = activeStep + 1;
               if (next <= 4 && steps[next - 1].status !== 'locked') setActiveStep(next);
             }}
             disabled={activeStep === 4 || steps[activeStep].status === 'locked'}
-            className="flex items-center gap-2 px-4 py-2 text-sm text-slate-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+            className="flex items-center gap-2 px-4 py-2 text-sm text-slate-400 hover:text-slate-700 dark:hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
           >
             Next <ArrowLeft size={14} className="rotate-180" />
           </button>

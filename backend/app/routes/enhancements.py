@@ -8,12 +8,18 @@ GET  /api/enhancement/{id}                     — get single enhancement
 PUT  /api/enhancement/{id}                     — update enhancement
 GET  /api/enhancement                          — list all enhancements
 """
+import gc
 import logging
 from datetime import datetime, timezone
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, UploadFile, File
 
-from app.models.enhancement import EnhancementRequest, EnhancementResponse, PatientCaseHistory
+from app.models.enhancement import EnhancementRequest, EnhancementResponse, PatientCaseHistory, EnhancementExtract
 from app.services.supabase_client import get_supabase
+from app.services.file_extractor import is_supported, extract_non_pdf, get_file_type
+from app.services.ocr import extract_pdf_text, render_gemini_thumbnails
+from app.services.enhancement_extractor import extract_enhancement_data
+from app.services.ocr_strategies.quality_checker import TextQualityChecker
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -176,6 +182,61 @@ async def update_enhancement(enhancement_id: str, data: EnhancementRequest):
     if not res.data:
         raise HTTPException(status_code=500, detail="Update failed")
     return _to_response(res.data[0])
+
+
+@router.post("/enhancement/pre-auth/{pre_auth_id}/extract-pdf", response_model=EnhancementExtract)
+async def extract_enhancement_pdf(
+    pre_auth_id: str,
+    file: UploadFile = File(...),
+):
+    """
+    Upload any clinical document (PDF, image, Word, Excel, CSV).
+    OCR + Gemini extracts enhancement fields and returns them for the form.
+    The caller is responsible for creating/updating the enhancement record.
+    """
+    if not file.filename or not is_supported(file.filename):
+        raise HTTPException(
+            status_code=400,
+            detail="Unsupported file type. Accepted: PDF, JPG, PNG, WEBP, TIFF, DOCX, XLSX, XLS, CSV",
+        )
+
+    file_bytes = await file.read()
+    if not file_bytes:
+        raise HTTPException(status_code=400, detail="Empty file")
+    if len(file_bytes) > settings.MAX_FILE_SIZE:
+        raise HTTPException(status_code=400, detail="File too large (max 10 MB)")
+
+    file_type = get_file_type(file.filename)
+    extracted_text = ""
+    page_images = None
+
+    if file_type == "pdf":
+        try:
+            extracted_text, pdf_ref = await extract_pdf_text(file_bytes)
+        except Exception as exc:
+            raise HTTPException(status_code=422, detail=f"OCR failed: {exc}")
+        quality = TextQualityChecker.get_quality_score(extracted_text) if extracted_text else 0.0
+        if quality < 40.0:
+            page_images = render_gemini_thumbnails(pdf_ref)
+        del pdf_ref
+        gc.collect()
+    else:
+        try:
+            extracted_text, page_images = extract_non_pdf(file_bytes, file.filename)
+        except Exception as exc:
+            raise HTTPException(status_code=422, detail=f"File extraction failed: {exc}")
+
+    try:
+        extract = await extract_enhancement_data(extracted_text, page_images)
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=f"Enhancement extraction failed: {exc}")
+    finally:
+        if page_images:
+            for img in page_images:
+                img.close()
+            gc.collect()
+
+    return extract
 
 
 @router.get("/enhancement", response_model=list[EnhancementResponse])

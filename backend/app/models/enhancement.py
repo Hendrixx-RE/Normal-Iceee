@@ -2,6 +2,24 @@ from pydantic import BaseModel
 from typing import Optional, List
 
 
+class EnhancementExtract(BaseModel):
+    """Fields extracted from an enhancement document by Gemini."""
+    reason: Optional[str] = None
+    clinical_justification: Optional[str] = None
+    updated_diagnosis: Optional[str] = None
+    updated_icd10_code: Optional[str] = None
+    updated_line_of_treatment: Optional[str] = None
+    updated_surgery_name: Optional[str] = None
+    updated_icd10_pcs_code: Optional[str] = None
+    revised_room_rent_per_day: Optional[float] = None
+    revised_icu_charges_per_day: Optional[float] = None
+    revised_ot_charges: Optional[float] = None
+    revised_surgeon_fees: Optional[float] = None
+    revised_medicines_consumables: Optional[float] = None
+    revised_investigations: Optional[float] = None
+    revised_total_estimated_cost: Optional[float] = None
+
+
 class EnhancementRequest(BaseModel):
     pre_auth_id: str
     abha_id: Optional[str] = None

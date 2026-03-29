@@ -62,7 +62,7 @@ const PatientList: React.FC = () => {
           placeholder="Search by name, ABHA ID, or patient ID…"
           value={search}
           onChange={e => setSearch(e.target.value)}
-          className="w-full pl-11 pr-4 py-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-colors"
+          className="w-full pl-11 pr-4 py-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
         />
       </div>
 
@@ -96,11 +96,11 @@ const PatientList: React.FC = () => {
             <button
               key={patient.patient_id}
               onClick={() => navigate(`/patients/${patient.patient_id}`)}
-              className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-5 flex items-center justify-between gap-4 hover:shadow-md hover:border-emerald-300 dark:hover:border-emerald-700 transition-all text-left group"
+              className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-5 flex items-center justify-between gap-4 hover:shadow-md hover:border-blue-300 dark:hover:border-blue-700 transition-all text-left group"
             >
               <div className="flex items-center gap-4 min-w-0">
-                <div className="bg-emerald-100 dark:bg-emerald-900/40 p-3 rounded-xl shrink-0">
-                  <User size={20} className="text-emerald-600 dark:text-emerald-400" />
+                <div className="bg-blue-100 dark:bg-blue-900/40 p-3 rounded-xl shrink-0">
+                  <User size={20} className="text-blue-600 dark:text-blue-400" />
                 </div>
                 <div className="min-w-0">
                   <div className="font-bold text-slate-900 dark:text-white text-base truncate">
@@ -124,7 +124,7 @@ const PatientList: React.FC = () => {
                 </div>
                 <ChevronRight
                   size={18}
-                  className="text-slate-300 dark:text-slate-600 group-hover:text-emerald-500 transition-colors"
+                  className="text-slate-300 dark:text-slate-600 group-hover:text-blue-500 transition-colors"
                 />
               </div>
             </button>
